@@ -1,0 +1,117 @@
+PRD — ProjectMind
+Product Requirements Document v1.0
+
+1. Overview
+ProjectMind adalah platform kolaborasi project internal BCA berbasis Agentic AI, di mana setiap project workspace dilengkapi dengan AI Agent Spesialis yang disesuaikan dengan komposisi tim lintas biro. Anggota tim dapat berinteraksi dengan agent sesuai domainnya — Agent IT untuk konteks teknis, Agent UAT untuk readiness dan defect — menggunakan bahasa natural berbasis dokumen resmi project.
+
+Di atas semua agent, AI Koordinator berperan sebagai otak project workspace: mengorkestrasikan informasi lintas agent, memantau progress, mendeteksi blocker, mengirim reminder, dan memberikan rekomendasi — tanpa menggantikan keputusan manusia.
+
+Tagline: "Project brain with Agentic AI for cross-bureau teams"
+
+1. Problem Statement
+Koordinasi project lintas biro di BCA (IT, UAT, BA, PO, dll) saat ini menghadapi friction berulang:
+
+Informasi tersebar di banyak tempat (email, Teams chat, Confluence, spreadsheet)
+Anggota baru harus onboarding manual ke konteks project
+Pertanyaan berulang tentang scope, administrasi, status defect membuang waktu
+Meeting koordinasi berulang untuk menyesuaikan kendala
+Dependency ke orang tertentu menghambat project
+
+1. Goals & Success Metrics
+
+Goal	Metrik
+Kurangi waktu onboarding anggota baru ke project	Waktu onboarding < 15 menit (vs rata-rata 2–3 jam)
+Kurangi pertanyaan berulang ke PIC	Jumlah pertanyaan repetitif turun ≥ 40%
+Percepat koordinasi cross-biro	Waktu resolusi blocker lintas biro turun ≥ 30%
+Tingkatkan produktivitas kerja	Diukur via survey NPS internal post-implementasi
+
+In Scope (Prototype):
+2 Agent aktif: Agent IT dan Agent UAT
+1 Project Workspace dengan member management
+Knowledge upload: PDF, Excel, teks bebas, image
+Chat interface untuk member dengan histori chat
+AI Coordinator: summarize cross-agent context
+Basic readiness dashboard
+
+Out of Scope (Future Iteration):
+Agent tim lain
+Integrasi MS Teams Bot
+SSO/autentikasi BCA internal
+Integrasi Jira / Confluence / Git
+
+1. Features & Requirements
+6.1 Project Workspace
+F-01 · Create Project
+Input wajib: Nama Project, dan opsional atau bisa nanti gitu buat kasih informasi administrasi kayak release id, change id, dll
+Input opsional: Deskripsi teks bebas (scope, background, catatan penting)
+Setiap workspace terisolasi — knowledge tidak bocor antar project
+F-02 · Invite Member
+username internal BCA
+Assign role per member (IT, UAT, BA, PO, Viewer) ini untuk prototype harusnya jika di implementasikan akan pakai active directory yg bisa get sesuaikan dengan role
+F-03 · Pilih Agent Aktif
+Agent bersifat opsional, diaktifkan sesuai kebutuhan project
+Jika tim hanya terdiri dari IT, hanya Agent IT yang diaktifkan
+Agent yang tidak diaktifkan tidak muncul di saat spawn otomatis dari ai coordinator
+
+6.2 Knowledge Management
+F-04 · Upload Knowledge
+Format	Contoh Dokumen	Agent yang Memanfaatkan
+PDF	BRD, SOP Deployment, Architecture Doc, Runbook	IT
+Excel / CSV	Test Scenario, Defect Log, UAT Checklist	UAT
+Teks bebas	Change ID context, scope narasi, catatan teknis	Semua
+Image (PNG/JPG)	Flow diagram, ERD, wireframe	IT
+
+F-05 · Knowledge Isolation
+Setiap project memiliki ChromaDB collection terpisah
+Upload document otomatis di-chunking, di-embed, dan di-index ke collection project tersebut
+Tidak ada shared knowledge antar project
+
+F-06 · Knowledge Source Label
+Setiap dokumen diberi label kepercayaan: Gold (dokumen resmi), Silver (draft/WIP), Bronze (catatan informal)
+Agent menyertakan label ini dalam setiap jawaban
+
+6.3 Agent Spesialis
+F-07 · AI coordinator
+Domain: all project coordination, reminder, recommendation, bantu reminder progress, otak dari project workspace, Koordinator dapat di-trigger untuk generate ringkasan kondisi project
+
+F-07 · Agent IT
+Domain: scope teknis, architecture, flow job, flow program, dependency, runbook
+Jawaban selalu disertai referensi dokumen sumber
+
+F-08 · Agent UAT
+Domain: test scenario, defect log, UAT readiness, evidence, test script
+
+F-09 · Guardrail & Confidence Level
+Setiap jawaban menyertakan: sumber dokumen + confidence level (High / Medium / Low)
+Jika confidence Low → agent wajib tampilkan pesan "Perlu validasi oleh PIC terkait"
+Jawaban tidak otomatis jadi kebenaran — hanya asistensi berbasis dokumen resmi
+
+6.5 Dashboard
+F-13 · Project Dashboard
+
+F-14 · (Future) MS Teams Bot
+AI Koordinator bisa diintegrasikan sebagai bot di channel Teams project
+Kirim daily summary otomatis setiap pagi ke channel
+Anggota tim bisa mention bot langsung di Teams
+
+1. Tech Stack
+Layer	Teknologi	Keterangan
+Frontend	Streamlit	Full Python, cepat untuk prototype
+Backend / Orchestration	CrewAI + FastAPI	Multi-agent orchestration
+Vector Store	ChromaDB	Self-hosted, isolated per project
+LLM	untuk prototype pakai model open source dari qwen, jika dimplementasionkan pakai API gateway bca
+File Processing	LangChain Document Loaders	PDF, Excel, image, teks
+Database	PQLite (prototype) → PostgreSQL	Project & member metadata
+
+1. Non-Functional Requirements
+Data Privacy: Semua knowledge tersimpan on-premise / private cloud BCA — tidak ada data project yang keluar ke public cloud
+Auditability: Setiap jawaban agent ter-log dengan timestamp, user, sumber dokumen
+Scalability: Arsitektur isolation per project memungkinkan ratusan project berjalan paralel
+Human-in-the-loop: Tidak ada keputusan otomatis — semua output agent bersifat rekomendasi, aksi tetap di manusia
+
+10. design system
+UI framework: Streamlit dengan layout chat-centric
+Inspirasi visual: clean, minimal, conversation-first (referensi: Perplexity, Together.ai)
+Mode: light/dark toggle
+Layout utama: sidebar untuk navigasi project & agent selector, main area untuk chat interface, panel kanan untuk knowledge source reference
+Warna aksen mengikuti brand BCA (biru — #003F88)
