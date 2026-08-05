@@ -2848,6 +2848,32 @@ def render_chat(project: sqlite3.Row) -> None:
         st.rerun()
 
 
+def generate_faq(project_id: str) -> list[dict[str, str]]:
+    """Generate FAQ from chat history and project context."""
+    chats = db_rows("select * from chats where project_id = ? and role = 'user' order by created_at desc limit 10", (project_id,))
+    docs = project_docs(project_id, approved_only=True)
+    faqs = []
+    seen_q: set[str] = set()
+    for chat in chats:
+        q = chat["content"][:100]
+        key = q[:40].lower()
+        if key not in seen_q and len(q) > 10:
+            seen_q.add(key)
+            sources = keyword_search(project_id, chat["content"], "Coordinator", limit=1)
+            answer = sources[0].snippet[:200] if sources else "Lihat knowledge base untuk detail lebih lanjut."
+            faqs.append({"q": q, "a": answer})
+    if not faqs and docs:
+        for doc in docs[:3]:
+            q = f"Apa ringkasan dari dokumen {doc['filename']}?"
+            a = row_get(doc, "ai_summary") or doc["text"][:200]
+            faqs.append({"q": q, "a": a})
+            
+    if not faqs:
+        faqs.append({"q": "Belum ada pertanyaan terkait project ini?", "a": "Tim belum mengajukan pertanyaan ke AI Coordinator. Mulai diskusi di tab Chat untuk otomatis menghasilkan FAQ di sini berdasarkan histori koordinasi project."})
+        
+    return faqs[:5]
+
+
 def extract_project_timeline(project_id: str) -> list[dict[str, object]]:
     """Extract or construct project phase timeline from docs and project metadata."""
     docs = project_docs(project_id, approved_only=True)
