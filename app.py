@@ -3075,19 +3075,20 @@ def render_dashboard(project: sqlite3.Row) -> None:
     st.markdown(
         """<div class="pm-section-header">
              <div class="pm-section-icon">🤖</div>
-             <div class="pm-section-heading">AI Coordinator Panel (Status, FAQ Terpopuler & Rekomendasi Actionable)</div>
+             <div class="pm-section-heading">AI Coordinator Panel</div>
            </div>""",
         unsafe_allow_html=True,
     )
 
     col_status, col_faq, col_actions = st.columns([1.1, 0.95, 0.95], gap="large")
 
-    # Panel 3.1: Status Project Realtime Konkret & Naratif
+    # Panel 3.1: Status Project Realtime Konkret & Visual Stepper
     with col_status:
         st.markdown(
             """
-            <div style="font-size:0.85rem; font-weight:800; color:var(--ink); margin-bottom:8px; display:flex; align-items:center; gap:6px;">
-                <span>✨ Status Project Realtime</span>
+            <div style="font-size:0.85rem; font-weight:800; color:var(--ink); margin-bottom:10px; display:flex; align-items:center; gap:8px;">
+                <span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:#20A77B; box-shadow:0 0 10px #20A77B;"></span>
+                <span>Status Project Realtime</span>
             </div>
             """,
             unsafe_allow_html=True
@@ -3097,76 +3098,107 @@ def render_dashboard(project: sqlite3.Row) -> None:
         has_uat_scope = any(d["agent_scope"] in {"UAT", "All"} for d in approved_docs)
         
         if defects_count > 0:
-            realtime_status_desc = f"🧪 Berdasarkan dokumen UAT terkini, project saat ini sedang dalam <b>Tahap Pengujian di Environment Regresi</b> oleh tim UAT dengan dukungan tim IT. Terdeteksi <b>{defects_count} open defect</b> yang sedang ditindaklanjuti."
+            realtime_status_desc = f"🧪 Berdasarkan dokumen UAT terkini, project saat ini sedang dalam <b>Tahap Pengujian di Environment Regresi oleh Tim UAT</b> dengan dukungan Tim IT. Terdeteksi <b>{defects_count} open defect</b> yang sedang ditindaklanjuti."
+            status_badge_color = "#E55353"
+            active_step = "UAT Regresi"
         elif has_uat_scope:
             realtime_status_desc = "🧪 Berdasarkan dokumen UAT & evidence terkini, project saat ini sedang dalam <b>Tahap Pengujian di Environment Regresi oleh Tim UAT</b>, di-support penuh oleh Tim IT untuk memastikan kestabilan sistem."
+            status_badge_color = "#20A77B"
+            active_step = "UAT Regresi"
         else:
-            realtime_status_desc = "⚙️ Berdasarkan dokumen knowledge base, project saat ini berada dalam <b>Tahap Finalisasi Spesifikasi Teknis oleh Tim IT</b> sebelum pengujian UAT dimulai."
+            realtime_status_desc = "⚙️ Berdasarkan dokumen knowledge base, project saat ini berada dalam <b>Tahap Finalisasi Spesifikasi Teknis & API Spec oleh Tim IT</b> sebelum pengujian UAT dimulai."
+            status_badge_color = "#00A6D6"
+            active_step = "IT Spec"
 
         html_stat = (
-            f'<div class="pm-shell" style="padding:16px 18px; min-height:260px; display:flex; flex-direction:column; justify-content:space-between;">'
+            f'<div class="pm-shell" style="padding:18px 20px; min-height:270px; display:flex; flex-direction:column; justify-content:space-between; border-top:3px solid {status_badge_color};">'
             f'<div>'
-            f'<div style="font-size:0.75rem; font-weight:800; color:var(--brand); text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px;">'
+            f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">'
+            f'<span style="font-size:0.72rem; font-weight:800; color:var(--brand); text-transform:uppercase; letter-spacing:.05em;">'
             f'📍 Dynamic Operational Status'
+            f'</span>'
+            f'<span style="font-size:0.7rem; font-weight:800; padding:2px 8px; border-radius:10px; background:{status_badge_color}18; color:{status_badge_color}; border:1px solid {status_badge_color}30;">'
+            f'● Active'
+            f'</span>'
             f'</div>'
-            f'<div style="font-size:0.88rem; color:var(--ink); line-height:1.55; background:var(--card-alt); padding:12px 14px; border-radius:10px; border-left:4px solid #20A77B; margin-bottom:12px;">'
+            f'<div style="font-size:0.88rem; color:var(--ink); line-height:1.6; background:var(--card-alt); padding:12px 14px; border-radius:10px; border-left:4px solid {status_badge_color}; margin-bottom:14px;">'
             f'{realtime_status_desc}'
             f'</div>'
-            f'<div style="font-size:0.72rem; color:var(--muted); font-weight:700; margin-bottom:6px;">ALUR KOORDINASI TIM:</div>'
-            f'<div style="font-size:0.75rem; color:var(--ink); line-height:1.6;">'
-            f'✅ <b>BA</b> Scope Freeze ➔ ⚡ <b>IT</b> Dev & API Spec ➔ 🧪 <b>UAT</b> Regresi Testing (Active) ➔ 🚀 Release Gate'
+            f'<div style="font-size:0.7rem; color:var(--muted); font-weight:700; uppercase; letter-spacing:.04em; margin-bottom:8px;">ALUR KOORDINASI TIM LINTAS BIRO:</div>'
+            f'<div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:0.72rem; font-weight:700;">'
+            f'<span style="padding:4px 8px; border-radius:6px; background:#003F8815; color:#003F88;">✅ BA Scope</span>'
+            f'<span style="color:var(--muted);">➔</span>'
+            f'<span style="padding:4px 8px; border-radius:6px; background:{"#00A6D625" if active_step=="IT Spec" else "#00A6D615"}; color:#00A6D6;">⚡ IT Spec</span>'
+            f'<span style="color:var(--muted);">➔</span>'
+            f'<span style="padding:4px 8px; border-radius:6px; background:{"#20A77B25" if active_step=="UAT Regresi" else "#20A77B15"}; color:#20A77B; border:{"1px solid #20A77B" if active_step=="UAT Regresi" else "none"};">🧪 UAT Regresi</span>'
+            f'<span style="color:var(--muted);">➔</span>'
+            f'<span style="padding:4px 8px; border-radius:6px; background:#F5A62315; color:#F5A623;">🚀 Release Gate</span>'
             f'</div>'
             f'</div>'
-            f'<div style="margin-top:12px; font-size:0.74rem; color:var(--muted); border-top:1px solid var(--line); padding-top:8px;">'
-            f'🤖 <i>Disintesis otomatis dari Knowledge Base & AI Coordinator.</i>'
+            f'<div style="margin-top:14px; font-size:0.72rem; color:var(--muted); border-top:1px solid var(--line); padding-top:8px; display:flex; justify-content:space-between; align-items:center;">'
+            f'<span>🤖 <i>Synthesized via AI Coordinator</i></span>'
+            f'<span style="color:var(--brand); font-weight:700;">GAIA Gateway</span>'
             f'</div>'
             f'</div>'
         )
         st.markdown(html_stat, unsafe_allow_html=True)
 
+    # Panel 3.2: FAQ Terpopuler (Visual Card Upgrade)
     with col_faq:
         st.markdown(
             """
-            <div style="font-size:0.85rem; font-weight:800; color:var(--ink); margin-bottom:8px; display:flex; align-items:center; gap:6px;">
-                <span>🔥 FAQ Terpopuler Minggu Ini</span>
+            <div style="font-size:0.85rem; font-weight:800; color:var(--ink); margin-bottom:10px; display:flex; align-items:center; gap:6px;">
+                <span>🔥 FAQ Terpopuler</span>
             </div>
             """,
             unsafe_allow_html=True
         )
         faqs = generate_faq(project_id)
         if faqs:
-            for faq in faqs[:3]:
+            for idx_f, faq in enumerate(faqs[:3]):
                 with st.expander(f"❓ {faq['q'][:65]}..."):
-                    st.write(faq["a"])
+                    st.markdown(
+                        f"""
+                        <div style="font-size:0.86rem; color:var(--ink); line-height:1.55; padding:4px 0;">
+                            {faq['a']}
+                        </div>
+                        <div style="font-size:0.7rem; color:var(--brand); font-weight:700; margin-top:8px; border-top:1px solid var(--line); padding-top:6px; text-align:right;">
+                            💡 Jawaban Resmi AI Coordinator
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
         else:
             st.info("Belum ada riwayat pertanyaan yang tertangkap minggu ini.")
 
+    # Panel 3.3: Action Items (Visual Card Upgrade)
     with col_actions:
         st.markdown(
             """
-            <div style="font-size:0.85rem; font-weight:800; color:var(--ink); margin-bottom:8px; display:flex; align-items:center; gap:6px;">
-                <span>⚡ Action Items Operasional</span>
+            <div style="font-size:0.85rem; font-weight:800; color:var(--ink); margin-bottom:10px; display:flex; align-items:center; gap:6px;">
+                <span>⚡ Action Items</span>
             </div>
             """,
             unsafe_allow_html=True
         )
         if action_items:
-            html_act = '<div class="pm-shell" style="padding:10px 14px; max-height:260px; overflow-y:auto;">'
+            html_act = '<div class="pm-shell" style="padding:14px 16px; min-height:270px; max-height:360px; overflow-y:auto;">'
+            owner_icons = {"PO": "👑 PO", "UAT Lead": "🧪 UAT", "IT Lead": "⚙️ IT", "BA Lead": "👔 BA"}
             for item in action_items:
                 sev   = item["severity"]
                 sev_c = {"High": "#E55353", "Medium": "#F5A623", "Low": "#00A6D6"}.get(sev, "#00A6D6")
-                owner = item["owner"]
+                owner_str = owner_icons.get(item["owner"], f"👤 {item['owner']}")
                 date_target = item["date"]
                 html_act += (
-                    f'<div style="padding:10px; margin-bottom:8px; border-radius:8px; background:var(--card-alt); border-left:4px solid {sev_c};">'
-                    f'<div style="display:flex; justify-content:space-between; align-items:center;">'
-                    f'<strong style="font-size:0.82rem; color:var(--ink);">{esc(item["title"])}</strong>'
-                    f'<span style="font-size:0.68rem; font-weight:800; padding:1px 6px; border-radius:4px; background:{sev_c}20; color:{sev_c};">{sev}</span>'
+                    f'<div style="padding:12px; margin-bottom:10px; border-radius:10px; background:var(--card-alt); border:1px solid var(--line); border-left:4px solid {sev_c}; shadow:0 2px 4px rgba(0,0,0,0.02);">'
+                    f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">'
+                    f'<strong style="font-size:0.85rem; color:var(--ink); font-weight:800;">{esc(item["title"])}</strong>'
+                    f'<span style="font-size:0.68rem; font-weight:800; padding:2px 8px; border-radius:10px; background:{sev_c}18; color:{sev_c}; border:1px solid {sev_c}30;">{sev} Priority</span>'
                     f'</div>'
-                    f'<div style="font-size:0.76rem; color:var(--muted); margin-top:4px; line-height:1.4;">{esc(item["body"])}</div>'
-                    f'<div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; font-size:0.7rem;">'
+                    f'<div style="font-size:0.78rem; color:var(--muted); margin-top:4px; line-height:1.45;">{esc(item["body"])}</div>'
+                    f'<div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; border-top:1px solid var(--line); padding-top:6px; font-size:0.72rem;">'
                     f'<span style="color:var(--brand); font-weight:700;">📅 Target: {date_target}</span>'
-                    f'<span style="color:var(--muted); font-weight:700;">PIC: {owner}</span>'
+                    f'<span style="font-weight:700; color:var(--ink); padding:1px 6px; border-radius:6px; background:var(--card); border:1px solid var(--line);">{owner_str}</span>'
                     f'</div>'
                     f'</div>'
                 )
