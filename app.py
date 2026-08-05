@@ -1960,15 +1960,264 @@ def inject_css() -> None:
             color: white;
         }}
 
-        @media (max-width: 1024px) {{
-            .pm-readiness-grid {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}
-            .pm-dashboard-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
-            .pm-title-row {{ display: block; }}
-            .pm-overview-grid {{ grid-template-columns: 1fr; }}
+        /* ─── Mobile & Tablet Responsive Enhancements ─── */
+
+        [data-testid="stSidebarCollapsedControl"] {{
+            top: 10px !important;
+            left: 10px !important;
+            z-index: 999999 !important;
+            background: var(--card) !important;
+            border: 1px solid var(--line) !important;
+            border-radius: 8px !important;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.15) !important;
         }}
+        [data-testid="stSidebarCollapsedControl"] button {{
+            height: 38px !important;
+            width: 38px !important;
+            color: var(--ink) !important;
+        }}
+
+        html, body, .stApp {{
+            overflow-x: hidden !important;
+            width: 100% !important;
+        }}
+
+        @media (max-width: 1024px) {{
+            .block-container {{
+                padding-left: 16px !important;
+                padding-right: 16px !important;
+            }}
+            .pm-readiness-grid {{ 
+                grid-template-columns: repeat(3, minmax(0, 1fr)); 
+                gap: 10px;
+            }}
+            .pm-dashboard-grid {{ 
+                grid-template-columns: repeat(2, minmax(0, 1fr)); 
+            }}
+            .pm-title-row {{ 
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }}
+            .pm-overview-grid {{ 
+                grid-template-columns: 1fr; 
+            }}
+        }}
+
         @media (max-width: 768px) {{
-            .pm-login-hero {{ display: none; }}
-            .pm-readiness-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+            .block-container {{
+                padding-top: 12px !important;
+                padding-left: 10px !important;
+                padding-right: 10px !important;
+                padding-bottom: 140px !important;
+            }}
+
+            div[data-testid="stHorizontalBlock"] {{
+                flex-direction: column !important;
+                gap: 12px !important;
+            }}
+            div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {{
+                width: 100% !important;
+                min-width: 100% !important;
+            }}
+
+            .pm-topline {{
+                padding: 14px 16px;
+                border-radius: 10px;
+                margin-bottom: 12px;
+            }}
+            .pm-title-row h1 {{
+                font-size: 1.35rem;
+                line-height: 1.25;
+            }}
+            .pm-kicker {{
+                font-size: 0.68rem;
+            }}
+            .pm-header-metadata {{
+                font-size: 0.78rem;
+                gap: 6px;
+            }}
+            .pm-header-description {{
+                font-size: 0.82rem;
+                margin-top: 8px;
+                padding-top: 8px;
+            }}
+            .pm-chip-row {{
+                margin-top: 8px;
+                gap: 6px;
+            }}
+            .pm-chip {{
+                padding: 3px 8px;
+                font-size: 0.7rem;
+            }}
+
+            .stApp:has(.pm-login-split-trigger) .block-container {{
+                padding-top: 3vh !important;
+                padding-left: 12px !important;
+                padding-right: 12px !important;
+            }}
+            .pm-hero-title {{
+                font-size: 2.1rem !important;
+                margin-bottom: 12px !important;
+            }}
+            .pm-hero-desc {{
+                font-size: 0.95rem !important;
+                line-height: 1.5 !important;
+                margin-bottom: 20px !important;
+            }}
+            .pm-feature-item {{
+                gap: 12px !important;
+                margin-bottom: 16px !important;
+            }}
+            .pm-feature-icon {{
+                width: 36px !important;
+                height: 36px !important;
+                font-size: 1rem !important;
+                border-radius: 10px !important;
+            }}
+            .pm-feature-text h4 {{
+                font-size: 0.95rem !important;
+            }}
+            .pm-feature-text p {{
+                font-size: 0.82rem !important;
+            }}
+            .stApp:has(.pm-login-split-trigger) div[data-testid="stForm"] {{
+                padding: 24px 16px !important;
+                border-radius: 16px !important;
+            }}
+            .pm-login-creds-badge {{
+                flex-wrap: wrap !important;
+                padding: 6px 10px !important;
+                font-size: 0.75rem !important;
+            }}
+
+            .pm-readiness-grid {{
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 8px;
+            }}
+            .pm-readiness {{
+                padding: 12px 10px;
+                border-radius: 10px;
+            }}
+            .pm-readiness-label {{
+                font-size: 0.68rem;
+            }}
+            .pm-readiness-value {{
+                font-size: 1.35rem;
+            }}
+            .pm-dashboard-grid {{
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }}
+            .pm-dashboard-card {{
+                padding: 12px 14px;
+                min-height: auto;
+            }}
+
+            .pm-progress-line {{
+                grid-template-columns: 1fr 48px;
+                grid-template-rows: auto auto;
+                gap: 4px 8px;
+                padding: 10px 0;
+            }}
+            .pm-progress-name {{
+                grid-column: 1 / 2;
+                font-size: 0.85rem;
+            }}
+            .pm-progress-basis {{
+                grid-column: 1 / 3;
+                font-size: 0.74rem;
+            }}
+
+            .pm-member-row {{
+                grid-template-columns: 1fr 1fr;
+                gap: 4px 8px;
+                padding: 10px 12px;
+                border-radius: 8px;
+                background: var(--card-alt);
+                margin-bottom: 6px;
+            }}
+            .pm-member-header {{
+                display: none;
+            }}
+            .pm-member-nip {{
+                grid-column: 1 / 3;
+                font-size: 0.76rem;
+            }}
+            .pm-member-name {{
+                grid-column: 1 / 3;
+                font-size: 0.88rem;
+            }}
+
+            .stTabs [data-baseweb="tab-list"] {{
+                overflow-x: auto !important;
+                flex-wrap: nowrap !important;
+                -webkit-overflow-scrolling: touch;
+                gap: 4px !important;
+                padding-bottom: 6px !important;
+                margin-bottom: 12px !important;
+            }}
+            .stTabs [data-baseweb="tab"] {{
+                padding: 8px 12px !important;
+                font-size: 0.8rem !important;
+                white-space: nowrap !important;
+                flex-shrink: 0 !important;
+            }}
+
+            .stButton > button, 
+            .stFormSubmitButton > button, 
+            [data-baseweb="select"] > div {{
+                min-height: 42px !important;
+            }}
+
+            div[data-testid="stBottom"] {{
+                padding: 6px 8px calc(8px + env(safe-area-inset-bottom, 0px)) 8px !important;
+            }}
+            div[data-testid="stChatInput"] textarea {{
+                font-size: 0.88rem !important;
+                padding: 10px 12px !important;
+            }}
+            div[data-testid="stChatInput"] button {{
+                width: 38px !important;
+                height: 38px !important;
+            }}
+
+            .pm-coordinator-banner {{
+                padding: 10px 12px;
+                gap: 10px;
+                border-radius: 10px;
+            }}
+            .pm-coordinator-icon {{
+                width: 36px;
+                height: 36px;
+                font-size: 1.1rem;
+                border-radius: 8px;
+            }}
+            .pm-coordinator-name {{
+                font-size: 0.92rem;
+            }}
+            .pm-coordinator-desc {{
+                font-size: 0.78rem;
+            }}
+        }}
+
+        @media (max-width: 420px) {{
+            .pm-readiness-grid {{
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 6px;
+            }}
+            .pm-readiness-value {{
+                font-size: 1.2rem;
+            }}
+            .pm-hero-title {{
+                font-size: 1.8rem !important;
+            }}
+            .pm-member-row {{
+                grid-template-columns: 1fr;
+            }}
+            .pm-member-nip, .pm-member-name {{
+                grid-column: 1 / 2;
+            }}
         }}
         </style>
         """
