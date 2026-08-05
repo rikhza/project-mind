@@ -2911,9 +2911,9 @@ def generate_ai_project_overview(project: sqlite3.Row) -> str:
     if not docs:
         return f"Project <b>{proj_name}</b> (Release: <code>{rel_id}</code>) saat ini belum memiliki dokumen resmi yang di-approve oleh PO. Unggah BRD atau dokumen teknis di tab <b>Knowledge</b> untuk mengaktifkan ringkasan otomatis berbasis Agentic AI."
     
-    summaries = [row_get(d, "ai_summary") or d["text"][:160] for d in docs if row_get(d, "ai_summary") or d["text"]]
+    summaries = [row_get(d, "ai_summary") or d["text"] for d in docs if row_get(d, "ai_summary") or d["text"]]
     overview_text = " ".join(summaries[:3]) if summaries else "Dokumen project telah diunggah dan di-index oleh Agent IT & UAT untuk mendukung koordinasi otomatis."
-    return f"Project <b>{proj_name}</b> (Release Target: <code>{rel_id}</code>, Change ID: <code>{chg_id}</code>) berfokus pada efisiensi koordinasi lintas biro BCA (BA, UAT, dan IT). {esc(overview_text[:350])}..."
+    return f"Project <b>{proj_name}</b> (Release Target: <code>{rel_id}</code>, Change ID: <code>{chg_id}</code>) berfokus pada efisiensi koordinasi lintas biro BCA. {esc(overview_text)}"
 
 
 def generate_action_items(project_id: str) -> list[dict[str, str]]:
@@ -2986,19 +2986,13 @@ def render_dashboard(project: sqlite3.Row) -> None:
 
     st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
 
-    st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
-
-    # ── Full-Width Summary Banner (Tanpa Header Label Redundant) ──────────────────
+    # ── Context Summary Card (Clean Untruncated Full Overview) ─────────────────────
     ai_overview = generate_ai_project_overview(project)
-    rel_id_str = esc(project['release_id'] or 'TBD')
-    chg_id_str = esc(project['change_id'] or 'TBD')
-    doc_count_str = f"{len(approved_docs)} / {len(all_docs)} Docs"
-    member_count_str = f"{len(members)} Member"
 
     st.markdown(
         f"""
         <div class="pm-shell" style="padding:20px 24px; margin-bottom:20px; background:linear-gradient(135deg, rgba(0,63,136,.06), rgba(0,166,214,.04)), var(--card);">
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; flex-wrap:wrap; gap:10px;">
                 <div style="font-size:0.75rem; font-weight:800; text-transform:uppercase; color:var(--brand); letter-spacing:.06em;">
                     📋 Overview & Context Project
                 </div>
@@ -3006,30 +3000,8 @@ def render_dashboard(project: sqlite3.Row) -> None:
                     Auto Synthesized
                 </span>
             </div>
-            <div style="font-size:0.95rem; color:var(--ink); line-height:1.65; margin-bottom:16px;">
+            <div style="font-size:0.94rem; color:var(--ink); line-height:1.65;">
                 {ai_overview}
-            </div>
-            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px; border-top:1px solid var(--line); padding-top:14px;">
-                <div style="background:var(--card-alt); padding:8px 12px; border-radius:8px; border:1px solid var(--line);">
-                    <div style="font-size:0.7rem; color:var(--muted); font-weight:600;">📋 Release Target</div>
-                    <div style="font-size:0.92rem; font-weight:800; color:var(--ink);">{rel_id_str}</div>
-                </div>
-                <div style="background:var(--card-alt); padding:8px 12px; border-radius:8px; border:1px solid var(--line);">
-                    <div style="font-size:0.7rem; color:var(--muted); font-weight:600;">🔄 Change ID</div>
-                    <div style="font-size:0.92rem; font-weight:800; color:var(--ink);">{chg_id_str}</div>
-                </div>
-                <div style="background:var(--card-alt); padding:8px 12px; border-radius:8px; border:1px solid var(--line);">
-                    <div style="font-size:0.7rem; color:var(--muted); font-weight:600;">📚 Approved Knowledge</div>
-                    <div style="font-size:0.92rem; font-weight:800; color:#20A77B;">{doc_count_str}</div>
-                </div>
-                <div style="background:var(--card-alt); padding:8px 12px; border-radius:8px; border:1px solid var(--line);">
-                    <div style="font-size:0.7rem; color:var(--muted); font-weight:600;">👥 Tim Lintas Biro</div>
-                    <div style="font-size:0.92rem; font-weight:800; color:var(--ink);">{member_count_str}</div>
-                </div>
-                <div style="background:var(--card-alt); padding:8px 12px; border-radius:8px; border:1px solid var(--line);">
-                    <div style="font-size:0.7rem; color:var(--muted); font-weight:600;">💬 Interaksi AI</div>
-                    <div style="font-size:0.92rem; font-weight:800; color:#00A6D6;">{chat_count} Pesan</div>
-                </div>
             </div>
         </div>
         """,
@@ -3038,7 +3010,7 @@ def render_dashboard(project: sqlite3.Row) -> None:
 
     st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
 
-    # ── Visual Timeline & Target HK Project (Custom Responsive Card) ──────────────
+    # ── Visual Timeline & Target HK Project ───────────────────────────────────────
     st.markdown(
         """<div class="pm-section-header">
              <div class="pm-section-icon">📅</div>
@@ -3049,7 +3021,6 @@ def render_dashboard(project: sqlite3.Row) -> None:
 
     phases = extract_project_timeline(project_id)
 
-    # Gradient progress line
     timeline_cards_html = ""
     biro_icons = {"BA": "👔", "IT": "⚙️", "UAT": "🧪", "Lintas Biro": "🚀"}
     
@@ -3062,43 +3033,35 @@ def render_dashboard(project: sqlite3.Row) -> None:
         start_fmt = phase["Start"]
         end_fmt = phase["End"]
         
-        timeline_cards_html += f"""
-        <div style="flex:1; min-width:220px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; border-top:4px solid {status_color}; display:flex; flex-direction:column; justify-content:space-between; position:relative;">
-            <div>
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                    <span style="font-size:0.72rem; font-weight:800; padding:2px 8px; border-radius:10px; background:{status_bg}; color:{status_color}; border:1px solid {status_color}30;">
-                        {icon} Biro {phase['Biro']}
-                    </span>
-                    <span style="font-size:0.72rem; font-weight:800; color:var(--brand);">
-                        {phase['HK']}
-                    </span>
-                </div>
-                <div style="font-size:0.9rem; font-weight:800; color:var(--ink); margin-bottom:4px; line-height:1.35;">
-                    {phase['Fase']}
-                </div>
-                <div style="font-size:0.75rem; color:var(--muted); font-weight:600; margin-bottom:10px;">
-                    📅 {start_fmt} ➔ {end_fmt}
-                </div>
-            </div>
-            <div style="display:flex; align-items:center; justify-content:space-between; border-top:1px solid var(--line); padding-top:8px;">
-                <span style="font-size:0.7rem; color:var(--muted); font-weight:600;">Status Phase</span>
-                <span style="font-size:0.72rem; font-weight:800; color:{status_color};">● {status_lbl}</span>
-            </div>
-        </div>
-        """
+        timeline_cards_html += (
+            f'<div style="flex:1; min-width:210px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; border-top:4px solid {status_color}; display:flex; flex-direction:column; justify-content:space-between;">'
+            f'<div>'
+            f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">'
+            f'<span style="font-size:0.72rem; font-weight:800; padding:2px 8px; border-radius:10px; background:{status_bg}; color:{status_color}; border:1px solid {status_color}30;">'
+            f'{icon} Biro {phase["Biro"]}'
+            f'</span>'
+            f'<span style="font-size:0.72rem; font-weight:800; color:var(--brand);">'
+            f'{phase["HK"]}'
+            f'</span>'
+            f'</div>'
+            f'<div style="font-size:0.88rem; font-weight:800; color:var(--ink); margin-bottom:4px; line-height:1.35;">'
+            f'{phase["Fase"]}'
+            f'</div>'
+            f'<div style="font-size:0.75rem; color:var(--muted); font-weight:600; margin-bottom:10px;">'
+            f'📅 {start_fmt} ➔ {end_fmt}'
+            f'</div>'
+            f'</div>'
+            f'<div style="display:flex; align-items:center; justify-content:space-between; border-top:1px solid var(--line); padding-top:8px;">'
+            f'<span style="font-size:0.7rem; color:var(--muted); font-weight:600;">Status Phase</span>'
+            f'<span style="font-size:0.72rem; font-weight:800; color:{status_color};">● {status_lbl}</span>'
+            f'</div>'
+            f'</div>'
+        )
 
     st.markdown(
         f"""
         <div class="pm-shell" style="padding:18px 20px; margin-bottom:20px;">
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;">
-                <div style="font-size:0.75rem; font-weight:800; text-transform:uppercase; color:var(--brand); letter-spacing:.05em;">
-                    🚀 Milestone & Ritme Kerja Lintas Biro BCA
-                </div>
-                <div style="font-size:0.74rem; color:var(--muted); font-weight:600;">
-                    Disintesis dari Knowledge Base Project
-                </div>
-            </div>
-            <div style="display:flex; flex-wrap:wrap; gap:12px; justify-content:space-between; position:relative;">
+            <div style="display:flex; flex-wrap:wrap; gap:12px; justify-content:space-between;">
                 {timeline_cards_html}
             </div>
         </div>
