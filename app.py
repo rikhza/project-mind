@@ -1467,6 +1467,119 @@ def inject_css() -> None:
             margin-bottom: 8px;
         }}
 
+        /* ─── Knowledge cards ─── */
+        .pm-kb-card {{
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 14px 16px;
+            transition: box-shadow .2s, transform .2s, border-color .2s;
+        }}
+        .pm-kb-card:hover {{
+            box-shadow: 0 8px 28px rgba(15,32,52,.08);
+            transform: translateY(-1px);
+            border-color: rgba(0,63,136,.25);
+        }}
+        .pm-kb-top {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }}
+        .pm-kb-title {{
+            font-size: .92rem;
+            font-weight: 800;
+            color: var(--ink);
+            line-height: 1.3;
+            word-break: break-word;
+        }}
+        .pm-kb-meta {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+        }}
+        .pm-kb-badge {{
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: .7rem;
+            font-weight: 800;
+            padding: 2px 8px;
+            border-radius: 999px;
+            white-space: nowrap;
+        }}
+        .pm-kb-badge.type {{ background: rgba(0,166,214,.10); color: var(--accent-cyan); }}
+        .pm-kb-badge.official {{ background: rgba(245,166,35,.12); color: #c07a00; }}
+        .pm-kb-badge.draft {{ background: rgba(0,166,214,.12); color: var(--accent-cyan); }}
+        .pm-kb-badge.informal {{ background: rgba(102,112,133,.12); color: var(--muted); }}
+        .pm-kb-badge.approved {{ background: rgba(32,167,123,.12); color: var(--accent-green); }}
+        .pm-kb-badge.pending {{ background: rgba(245,166,35,.14); color: var(--accent-amber); }}
+        .pm-kb-body {{ color: var(--muted); font-size: .82rem; line-height: 1.5; }}
+        .pm-kb-foot {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-top: 2px;
+        }}
+        .pm-kb-by {{ color: var(--muted); font-size: .72rem; }}
+        .pm-kb-by strong {{ color: var(--brand); font-weight: 700; }}
+        .pm-kb-scope {{ color: var(--muted); font-size: .7rem; font-weight: 700; }}
+        .pm-kb-grid {{
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 4px;
+        }}
+        .pm-kb-stat-card {{
+            background: var(--card-alt);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 10px 12px;
+            text-align: center;
+        }}
+        .pm-kb-stat-val {{
+            font-size: 1.35rem;
+            font-weight: 900;
+            color: var(--ink);
+            line-height: 1.1;
+        }}
+        .pm-kb-stat-lbl {{
+            font-size: .68rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            color: var(--section);
+            margin-top: 2px;
+        }}
+        .pm-approve-card {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            background: linear-gradient(135deg, rgba(245,166,35,.07), transparent);
+            border: 1px solid rgba(245,166,35,.22);
+            border-radius: 10px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+        }}
+        .pm-approve-info {{ min-width: 0; }}
+        .pm-approve-title {{
+            font-size: .84rem;
+            font-weight: 800;
+            color: var(--ink);
+            word-break: break-word;
+        }}
+        .pm-approve-sub {{
+            font-size: .74rem;
+            color: var(--muted);
+            margin-top: 2px;
+        }}
+
         /* ─── FAQ ─── */
         .pm-faq-item {{
             border: 1px solid var(--line);
@@ -1885,28 +1998,6 @@ def inject_css() -> None:
             overflow: hidden;
         }}
 
-        /* ─── Knowledge form tabs ─── */
-        .pm-intake-tab {{
-            display: flex;
-            gap: 6px;
-            margin-bottom: 16px;
-        }}
-        .pm-intake-btn {{
-            padding: 6px 14px;
-            border-radius: 999px;
-            border: 1px solid var(--line);
-            background: var(--card-alt);
-            color: var(--muted);
-            font-size: .82rem;
-            font-weight: 600;
-            cursor: pointer;
-        }}
-        .pm-intake-btn.active {{
-            background: var(--bca-blue);
-            border-color: var(--bca-blue);
-            color: white;
-        }}
-
         /* ─── Mobile & Tablet Responsive Enhancements ─── */
 
         [data-testid="stSidebarCollapsedControl"] {{
@@ -2059,6 +2150,10 @@ def inject_css() -> None:
             .pm-dashboard-card {{
                 padding: 12px 14px;
                 min-height: auto;
+            }}
+
+            .pm-kb-grid {{
+                grid-template-columns: 1fr;
             }}
 
             .pm-progress-line {{
@@ -2562,197 +2657,231 @@ def render_members(project_id: str) -> None:
 
 
 def render_knowledge(project_id: str) -> None:
-    left, right = st.columns([1.2, 1], gap="large")
+    all_docs = project_docs(project_id)
+    approved_docs = [d for d in all_docs if d["approval_status"] == "Approved"]
+    pending_docs = [d for d in all_docs if d["approval_status"] == "Pending"]
+    is_creator = can_approve_sources(project_id)
+
+    # ── Top: segmented intake + stats strip ────────────────────────────────────
+    if can_upload_sources(project_id):
+        intake_type = st.radio(
+            "Jenis Input",
+            ["📄 Dokumen", "📝 Catatan", "🔗 Link URL"],
+            horizontal=True,
+            label_visibility="collapsed",
+        )
+
+        if intake_type == "📄 Dokumen":
+            with st.form("upload_doc", clear_on_submit=True):
+                uploaded = st.file_uploader(
+                    "Upload dokumen project",
+                    type=["pdf", "xlsx", "xls", "csv", "txt", "md", "png", "jpg", "jpeg"],
+                    help="PDF, Excel, CSV, text, atau image (flow diagram, ERD, wireframe)",
+                )
+                manual_notes = st.text_area(
+                    "Catatan tambahan (opsional)",
+                    placeholder="Tambahkan konteks untuk diagram, catatan scope, atau penjelasan dokumen ini...",
+                    height=80,
+                )
+                submitted = st.form_submit_button("📤 Submit Dokumen", use_container_width=True, type="primary")
+            if submitted and uploaded:
+                extracted = extract_text(uploaded)
+                text = "\n\n".join(part for part in [extracted, manual_notes.strip()] if part)
+                if text.strip():
+                    save_document(
+                        project_id, uploaded.name, "Official", "All", text,
+                        doc_type="file",
+                        uploaded_by=st.session_state.get("username", "unknown"),
+                    )
+                    st.success(f"✅ **{uploaded.name}** diindeks dan menunggu approval creator.")
+                    st.rerun()
+                else:
+                    st.warning("Tidak ada teks yang bisa di-index dari file tersebut.")
+            elif submitted:
+                st.warning("Pilih file terlebih dahulu.")
+
+        elif intake_type == "📝 Catatan":
+            with st.form("upload_note", clear_on_submit=True):
+                note_title = st.text_input("Judul Catatan", placeholder="Contoh: Catatan Rapat Koordinasi 20 Jun")
+                note_text = st.text_area(
+                    "Isi Catatan",
+                    placeholder="Tuliskan catatan, scope narasi, keputusan rapat, atau konteks penting project...",
+                    height=180,
+                )
+                submitted = st.form_submit_button("📝 Simpan Catatan", use_container_width=True, type="primary")
+            if submitted:
+                if not note_title.strip() or not note_text.strip():
+                    st.warning("⚠️ Judul dan isi catatan wajib diisi.")
+                else:
+                    filename = f"note_{slugify(note_title)}.txt"
+                    save_document(
+                        project_id, filename, "Draft", "All", note_text,
+                        doc_type="note",
+                        uploaded_by=st.session_state.get("username", "unknown"),
+                    )
+                    st.success(f"✅ Catatan **{note_title}** disimpan dan menunggu approval creator.")
+                    st.rerun()
+
+        else:  # Link URL
+            with st.form("upload_link", clear_on_submit=True):
+                link_url = st.text_input("URL", placeholder="https://confluence.bca.id/...")
+                link_label = st.text_input("Label / Deskripsi", placeholder="Confluence - BRD QR Settlement")
+                link_desc = st.text_area(
+                    "Deskripsi konten link (opsional)",
+                    placeholder="Jelaskan apa yang ada di link ini, section mana yang relevan, dll...",
+                    height=80,
+                )
+                submitted = st.form_submit_button("🔗 Tambah Link", use_container_width=True, type="primary")
+            if submitted:
+                if not link_url.strip():
+                    st.warning("⚠️ URL wajib diisi.")
+                else:
+                    label_text = link_label.strip() or link_url.strip()
+                    content = f"Link: {link_url}\nLabel: {label_text}\n\n{link_desc}"
+                    filename = f"link_{slugify(label_text)}.txt"
+                    ai_sum = f"🔗 Link reference: [{label_text}]({link_url})" + (f" — {link_desc[:150]}" if link_desc.strip() else "")
+                    save_document(
+                        project_id, filename, "Informal", "All", content,
+                        doc_type="link", ai_summary=ai_sum,
+                        uploaded_by=st.session_state.get("username", "unknown"),
+                    )
+                    st.success(f"✅ Link **{label_text}** ditambahkan dan menunggu approval creator.")
+                    st.rerun()
+
+    # ── Stats strip ─────────────────────────────────────────────────────────────
+    total_types = {}
+    for d in approved_docs:
+        t = row_get(d, "doc_type") or "file"
+        total_types[t] = total_types.get(t, 0) + 1
+    type_strs = ", ".join(f"{cnt} {t}" for t, cnt in total_types.items()) or "belum ada"
+    all_text = " ".join(d["text"].lower() for d in approved_docs)
+    keywords = []
+    for kw in ["deployment", "rollback", "defect", "testing", "release", "migration", "settlement", "UAT", "runbook"]:
+        if kw.lower() in all_text:
+            keywords.append(kw)
+
+    st.markdown(
+        f"""
+        <div class="pm-kb-grid">
+            <div class="pm-kb-stat-card">
+                <div class="pm-kb-stat-val">{len(all_docs)}</div>
+                <div class="pm-kb-stat-lbl">Total Dokumen</div>
+            </div>
+            <div class="pm-kb-stat-card">
+                <div class="pm-kb-stat-val" style="color: var(--accent-green);">{len(approved_docs)}</div>
+                <div class="pm-kb-stat-lbl">Aktif (Approved)</div>
+            </div>
+            <div class="pm-kb-stat-card">
+                <div class="pm-kb-stat-val" style="color: var(--accent-amber);">{len(pending_docs)}</div>
+                <div class="pm-kb-stat-lbl">Menunggu Approval</div>
+            </div>
+            <div class="pm-kb-stat-card">
+                <div class="pm-kb-stat-val" style="color: var(--brand);">{len(keywords)}</div>
+                <div class="pm-kb-stat-lbl">Topik Terdeteksi</div>
+            </div>
+        </div>
+        <div style="font-size:.78rem; color:var(--muted); margin: 10px 0 4px; line-height:1.5;">
+            Komposisi: <strong style="color:var(--ink);">{type_strs}</strong>
+            {f' · Topik: <strong style="color:var(--ink);">{", ".join(keywords[:6])}</strong>' if keywords else ''}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown('<div style="height: 8px;"></div>', unsafe_allow_html=True)
+
+    # ── Main split: library (left) / manage (right) ─────────────────────────────
+    left, right = st.columns([1.5, 1], gap="large")
+
     with left:
         st.markdown(
             """
             <div class="pm-section-header">
                 <div class="pm-section-icon">🧠</div>
-                <div class="pm-section-heading">Knowledge Intake</div>
+                <div class="pm-section-heading">Knowledge Library</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        if can_upload_sources(project_id):
-            intake_type = st.radio(
-                "Jenis Input",
-                ["📄 Dokumen", "📝 Catatan", "🔗 Link URL"],
+        if not all_docs:
+            st.info("Belum ada knowledge di workspace ini. Upload dokumen, tambah catatan, atau masukkan link.")
+        else:
+            status_filter = st.radio(
+                "Filter status",
+                ["Semua", "Approved", "Pending"],
+                index=1 if pending_docs else 0,
                 horizontal=True,
                 label_visibility="collapsed",
             )
-
-            if intake_type == "📄 Dokumen":
-                with st.form("upload_doc", clear_on_submit=True):
-                    uploaded = st.file_uploader(
-                        "Upload dokumen project",
-                        type=["pdf", "xlsx", "xls", "csv", "txt", "md", "png", "jpg", "jpeg"],
-                        help="PDF, Excel, CSV, text, atau image (flow diagram, ERD, wireframe)",
+            shown = all_docs if status_filter == "Semua" else [d for d in all_docs if d["approval_status"] == status_filter]
+            if not shown:
+                st.info(f"Tidak ada dokumen dengan status {status_filter}.")
+            else:
+                cards = []
+                for d in shown:
+                    doc_type = row_get(d, "doc_type") or "file"
+                    type_icon = {"file": "📄", "note": "📝", "link": "🔗"}.get(doc_type, "📄")
+                    type_lbl = {"file": "Dokumen", "note": "Catatan", "link": "Link"}.get(doc_type, doc_type.capitalize())
+                    label_lbl = d["source_label"]
+                    status_lbl = d["approval_status"]
+                    status_cls = "approved" if status_lbl == "Approved" else "pending"
+                    body = (row_get(d, "ai_summary") or d["text"]).strip()[:140]
+                    by = d["uploaded_by"] or "unknown"
+                    cards.append(
+                        f'<div class="pm-kb-card">'
+                        f'<div class="pm-kb-top">'
+                        f'<div class="pm-kb-title">{esc(d["filename"])}</div>'
+                        f'</div>'
+                        f'<div class="pm-kb-meta">'
+                        f'<span class="pm-kb-badge type">{type_icon} {type_lbl}</span>'
+                        f'<span class="pm-kb-badge {label_lbl.lower()}">{esc(label_lbl)}</span>'
+                        f'<span class="pm-kb-badge {status_cls}">{status_lbl}</span>'
+                        f'</div>'
+                        f'<div class="pm-kb-body">{esc(body)}</div>'
+                        f'<div class="pm-kb-foot">'
+                        f'<span class="pm-kb-by">by <strong>{esc(by)}</strong> · {(d["created_at"] or "")[:10]}</span>'
+                        f'<span class="pm-kb-scope">🎯 {esc(d["agent_scope"])}</span>'
+                        f'</div>'
+                        f'</div>'
                     )
-                    manual_notes = st.text_area(
-                        "Catatan tambahan (opsional)",
-                        placeholder="Tambahkan konteks untuk diagram, catatan scope, atau penjelasan dokumen ini...",
-                        height=80,
-                    )
-                    submitted = st.form_submit_button("📤 Submit Dokumen", use_container_width=True, type="primary")
-                if submitted and uploaded:
-                    extracted = extract_text(uploaded)
-                    text = "\n\n".join(part for part in [extracted, manual_notes.strip()] if part)
-                    if text.strip():
-                        save_document(
-                            project_id, uploaded.name, "Official", "All", text,
-                            doc_type="file",
-                            uploaded_by=st.session_state.get("username", "unknown"),
-                        )
-                        st.success(f"✅ **{uploaded.name}** diindeks dan menunggu approval creator.")
-                        st.rerun()
-                    else:
-                        st.warning("Tidak ada teks yang bisa di-index dari file tersebut.")
-                elif submitted:
-                    st.warning("Pilih file terlebih dahulu.")
-
-            elif intake_type == "📝 Catatan":
-                with st.form("upload_note", clear_on_submit=True):
-                    note_title = st.text_input("Judul Catatan", placeholder="Contoh: Catatan Rapat Koordinasi 20 Jun")
-                    note_text = st.text_area(
-                        "Isi Catatan",
-                        placeholder="Tuliskan catatan, scope narasi, keputusan rapat, atau konteks penting project...",
-                        height=180,
-                    )
-                    submitted = st.form_submit_button("📝 Simpan Catatan", use_container_width=True, type="primary")
-                if submitted:
-                    if not note_title.strip() or not note_text.strip():
-                        st.warning("⚠️ Judul dan isi catatan wajib diisi.")
-                    else:
-                        filename = f"note_{slugify(note_title)}.txt"
-                        save_document(
-                            project_id, filename, "Draft", "All", note_text,
-                            doc_type="note",
-                            uploaded_by=st.session_state.get("username", "unknown"),
-                        )
-                        st.success(f"✅ Catatan **{note_title}** disimpan dan menunggu approval creator.")
-                        st.rerun()
-
-            else:  # Link URL
-                with st.form("upload_link", clear_on_submit=True):
-                    link_url = st.text_input("URL", placeholder="https://confluence.bca.id/...")
-                    link_label = st.text_input("Label / Deskripsi", placeholder="Confluence - BRD QR Settlement")
-                    link_desc = st.text_area(
-                        "Deskripsi konten link (opsional)",
-                        placeholder="Jelaskan apa yang ada di link ini, section mana yang relevan, dll...",
-                        height=80,
-                    )
-                    submitted = st.form_submit_button("🔗 Tambah Link", use_container_width=True, type="primary")
-                if submitted:
-                    if not link_url.strip():
-                        st.warning("⚠️ URL wajib diisi.")
-                    else:
-                        label_text = link_label.strip() or link_url.strip()
-                        content = f"Link: {link_url}\nLabel: {label_text}\n\n{link_desc}"
-                        filename = f"link_{slugify(label_text)}.txt"
-                        ai_sum = f"🔗 Link reference: [{label_text}]({link_url})" + (f" — {link_desc[:150]}" if link_desc.strip() else "")
-                        save_document(
-                            project_id, filename, "Informal", "All", content,
-                            doc_type="link", ai_summary=ai_sum,
-                            uploaded_by=st.session_state.get("username", "unknown"),
-                        )
-                        st.success(f"✅ Link **{label_text}** ditambahkan dan menunggu approval creator.")
-                        st.rerun()
-        else:
-            st.info("Hanya member workspace yang bisa menambah knowledge.")
-
-        # Indexed sources table (filterable by status)
-        docs = project_docs(project_id)
-        if docs:
-            st.markdown('<div class="pm-section-title" style="margin-top: 24px;">Semua Knowledge yang Diindeks</div>', unsafe_allow_html=True)
-            status_options = ["Semua", "Approved", "Pending"]
-            default_status = "Pending" if any(d["approval_status"] == "Pending" for d in docs) else "Semua"
-            status_filter = st.selectbox("Filter status", status_options, index=status_options.index(default_status), label_visibility="collapsed")
-            if status_filter != "Semua":
-                docs = [d for d in docs if d["approval_status"] == status_filter]
-            df = pd.DataFrame([{
-                "Nama": d["filename"],
-                "Tipe": (row_get(d, "doc_type") or "file").capitalize(),
-                "Label": d["source_label"],
-                "Status": d["approval_status"],
-                "Uploaded": (d["created_at"] or "")[:10],
-                "Oleh": d["uploaded_by"] or "-",
-            } for d in docs])
-            st.dataframe(df, hide_index=True, use_container_width=True)
+                st.markdown(f'<div class="pm-kb-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
 
     with right:
         st.markdown(
             """
             <div class="pm-section-header">
-                <div class="pm-section-icon">✨</div>
-                <div class="pm-section-heading">AI Summary & Knowledge Base</div>
+                <div class="pm-section-icon">🛠️</div>
+                <div class="pm-section-heading">Manage Knowledge</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        # Show last AI summary if just uploaded
-        if st.session_state.get("last_summary"):
-            st.markdown(
-                f"""
-                <div class="pm-ai-summary">
-                    <div class="pm-ai-summary-label">✨ AI Summary — Terbaru</div>
-                    <div class="pm-ai-summary-text">{esc(st.session_state["last_summary"])}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        docs = project_docs(project_id, approved_only=True)
-
-        # Project Context
-        if docs:
-            st.markdown('<div class="pm-section-title">Project Context</div>', unsafe_allow_html=True)
-            doc_types = {}
-            for d in docs:
-                t = row_get(d, "doc_type") or "file"
-                doc_types[t] = doc_types.get(t, 0) + 1
-            type_strs = ", ".join(f"{cnt} {t}" for t, cnt in doc_types.items())
-            all_text = " ".join(d["text"].lower() for d in docs)
-            keywords = []
-            for kw in ["deployment", "rollback", "defect", "testing", "release", "migration", "settlement", "UAT", "runbook"]:
-                if kw.lower() in all_text:
-                    keywords.append(kw)
-            st.markdown(
-                f"""
-                <div class="pm-context-card">
-                    <div class="pm-context-label">Konteks Project</div>
-                    <div style="color: var(--muted); font-size: .84rem; line-height: 1.6;">
-                        <strong style="color: var(--ink);">{len(docs)}</strong> knowledge items ({type_strs})<br/>
-                        <strong style="color: var(--ink);">Topik terdeteksi:</strong> {', '.join(keywords[:6]) if keywords else 'Upload lebih banyak dokumen untuk deteksi topik'}<br/>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        # ── Manage Documents: edit content in-app / approve pending ──────────────
-        all_docs = project_docs(project_id)
-        pending_docs = [d for d in all_docs if d["approval_status"] == "Pending"]
-        is_creator = can_approve_sources(project_id)
-
+        # Approval queue (creator only)
         if pending_docs and is_creator:
             st.markdown('<div class="pm-section-title" style="margin-top: 4px;">⏳ Menunggu Approval</div>', unsafe_allow_html=True)
             for d in pending_docs:
                 st.markdown(
                     f"""
-                    <div class="pm-source" style="border-left-color: #F5A623;">
-                        <div class="pm-source-title">{esc(d['filename'])}</div>
-                        <div class="pm-source-body">{esc(row_get(d, 'ai_summary') or d['text'][:160])}</div>
+                    <div class="pm-approve-card">
+                        <div class="pm-approve-info">
+                            <div class="pm-approve-title">{esc(d["filename"])}</div>
+                            <div class="pm-approve-sub">{esc((row_get(d, "ai_summary") or d["text"])[:100])}</div>
+                        </div>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
-                if st.button("✅ Approve", key=f"approve_{d['id']}"):
+                if st.button("✅ Approve", key=f"approve_{d['id']}", use_container_width=True):
                     approve_document(d["id"], st.session_state.get("username", "unknown"))
                     st.success(f"✅ **{d['filename']}** di-approve dan aktif untuk agent.")
                     st.rerun()
+        elif pending_docs and not is_creator:
+            st.markdown('<div class="pm-section-title" style="margin-top: 4px;">⏳ Menunggu Approval</div>', unsafe_allow_html=True)
+            st.caption(f"{len(pending_docs)} dokumen menunggu review creator workspace.")
 
+        # Manage documents (edit in-place / delete)
         if all_docs:
             st.markdown('<div class="pm-section-title" style="margin-top: 4px;">🛠️ Kelola Dokumen</div>', unsafe_allow_html=True)
             edit_options = [f"{d['filename']}  ·  {d['approval_status']}" for d in all_docs]
@@ -2781,32 +2910,30 @@ def render_knowledge(project_id: str) -> None:
                     st.rerun()
                 else:
                     st.warning("⚠️ Isi dokumen tidak boleh kosong.")
-            if st.button("🗑️ Hapus Dokumen", key=f"delete_{sel_doc['id']}"):
+            if st.button("🗑️ Hapus Dokumen", key=f"delete_{sel_doc['id']}", use_container_width=True):
                 db_execute("delete from documents where id = ?", (sel_doc["id"],))
                 st.success(f"🗑️ **{sel_doc['filename']}** dihapus.")
                 st.rerun()
 
-        # Knowledge Base list (approved only — sources agents actually use)
-        st.markdown('<div class="pm-section-title" style="margin-top: 4px;">Knowledge Base Aktif</div>', unsafe_allow_html=True)
-        if docs:
-            for doc in docs[:8]:
+        # Approved knowledge (what agents actually use)
+        st.markdown('<div class="pm-section-title" style="margin-top: 4px;">✅ Knowledge Base Aktif</div>', unsafe_allow_html=True)
+        if approved_docs:
+            for doc in approved_docs[:6]:
                 ai_sum = row_get(doc, "ai_summary") or ""
                 doc_type = row_get(doc, "doc_type") or "file"
                 type_icon = {"file": "📄", "note": "📝", "link": "🔗"}.get(doc_type, "📄")
-                type_badge_class = {"file": "official", "note": "note", "link": "link"}.get(doc_type, "draft")
                 st.markdown(
                     f"""
                     <div class="pm-source">
-                        <span class="pm-pill {type_badge_class}">{type_icon} {doc_type.capitalize()}</span>
-                        <span class="pm-pill {doc['source_label'].lower()}">{esc(doc['source_label'])}</span>
-                        <div class="pm-source-title">{esc(doc['filename'])}</div>
-                        <div class="pm-source-body">{esc(ai_sum[:180]) if ai_sum else esc(doc['text'][:180])}</div>
+                        <div class="pm-source-title">{type_icon} {esc(doc["filename"])}</div>
+                        <div class="pm-source-body">{esc(ai_sum[:160]) if ai_sum else esc(doc["text"][:160])}</div>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
         else:
             st.info("Belum ada knowledge aktif. Approve dokumen pending atau upload yang baru.")
+
 
 
 def render_chat(project: sqlite3.Row) -> None:
