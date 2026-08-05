@@ -656,21 +656,7 @@ def chat_history(project_id: str, agent: str) -> list[sqlite3.Row]:
     )
 
 
-def readiness_scores(project_id: str) -> dict[str, int]:
-    docs = project_docs(project_id, approved_only=True)
-    members = project_members(project_id)
-    doc_text = " ".join(doc["text"].lower() for doc in docs)
-    has_it = any(doc["agent_scope"] in {"IT", "All"} for doc in docs)
-    has_uat = any(doc["agent_scope"] in {"UAT", "All"} for doc in docs)
-    has_official = any(doc["source_label"] == "Official" for doc in docs)
-    defect_signal = any(term in doc_text for term in ["defect", "bug", "failed", "open"])
-    return {
-        "Knowledge": min(100, 25 + len(docs) * 15 + (20 if has_official else 0)),
-        "Team": min(100, 30 + len(members) * 12 + (20 if {"IT", "UAT"} <= {m["role"] for m in members} else 0)),
-        "IT Coverage": 85 if has_it else 35,
-        "UAT Coverage": 85 if has_uat else 35,
-        "Risk": 45 if defect_signal else 80,
-    }
+
 
 
 def approved_doc_text(project_id: str) -> str:
@@ -722,61 +708,7 @@ def blocker_signals(project_id: str) -> list[dict[str, str]]:
     return signals[:5]
 
 
-def milestone_progress(project_id: str) -> list[dict[str, object]]:
-    docs = project_docs(project_id, approved_only=True)
-    members = project_members(project_id)
-    text = " ".join(doc["text"].lower() for doc in docs)
-    has_it = any(doc["agent_scope"] in {"IT", "All"} for doc in docs)
-    has_uat = any(doc["agent_scope"] in {"UAT", "All"} for doc in docs)
-    has_official = any(doc["source_label"] == "Official" for doc in docs)
-    has_it_member = any(member["role"] == "IT" for member in members)
-    has_uat_member = any(member["role"] == "UAT" for member in members)
-    has_runbook = any(term in text for term in ["runbook", "rollback", "deployment"])
-    has_signoff = any(term in text for term in ["sign-off", "signoff", "approval"])
-    defects = open_defect_count(project_id)
-    return [
-        {
-            "name": "Scope freeze",
-            "value": min(100, 35 + (35 if has_official else 0) + (30 if docs else 0)),
-            "basis": "Official/approved scope source tersedia" if has_official else "Butuh approved scope/BRD untuk menjadi jelas",
-        },
-        {
-            "name": "IT readiness",
-            "value": min(100, 30 + (30 if has_it else 0) + (25 if has_runbook else 0) + (15 if has_it_member else 0)),
-            "basis": "Dihitung dari approved IT source, runbook/rollback, dan member IT",
-        },
-        {
-            "name": "UAT execution",
-            "value": max(15, min(100, 25 + (35 if has_uat else 0) + (20 if has_uat_member else 0) + (20 if defects == 0 else 0))),
-            "basis": "Dihitung dari approved UAT source, member UAT, dan defect terbuka",
-        },
-        {
-            "name": "Release approval",
-            "value": max(10, min(95, 20 + (25 if has_signoff else 0) + (20 if has_runbook else 0) + (20 if has_it and has_uat else 0) - min(defects * 8, 30))),
-            "basis": "Gate naik jika sign-off/runbook ada; turun jika masih ada defect/blocker",
-        },
-    ]
 
-
-def dashboard_metrics(project_id: str) -> dict[str, tuple[str, str]]:
-    all_docs = project_docs(project_id)
-    docs = project_docs(project_id, approved_only=True)
-    release_date = datetime(2026, 5, 20).date()
-    days_remaining = max((release_date - datetime.now().date()).days, 0)
-    blockers = blocker_signals(project_id)
-    defects = open_defect_count(project_id)
-    milestones = milestone_progress(project_id)
-    progress = round(sum(int(item["value"]) for item in milestones) / len(milestones)) if milestones else 0
-    pending = len([doc for doc in all_docs if doc["approval_status"] == "Pending"])
-    next_gate = "Approve sources" if pending else ("Resolve defect" if defects else "UAT sign-off")
-    return {
-        "Deadline": (release_date.strftime("%d %b %Y"), "Sample release date dari workspace"),
-        "Remaining": (f"D-{days_remaining}", "Dihitung dari deadline"),
-        "Progress": (f"{progress}%", "Rata-rata milestone berbasis evidence"),
-        "Blockers": (str(len(blockers)), "Sinyal dari approved source + pending approval"),
-        "Open Defects": (str(defects), "Keyword open/failed/blocker di approved defect source"),
-        "Next Gate": (next_gate, "Gate berikutnya dari kondisi workspace"),
-    }
 
 
 def generate_faq(project_id: str) -> list[dict[str, str]]:
@@ -2927,342 +2859,369 @@ def render_chat(project: sqlite3.Row) -> None:
         st.rerun()
 
 
-def render_executive_kpi_banner(project: sqlite3.Row, scores: dict[str, int], members: list[sqlite3.Row], docs: list[sqlite3.Row], blockers: list[dict[str, str]]) -> None:
-    avg_score = int(sum(scores.values()) / len(scores)) if scores else 0
-    gauge_color = "#20A77B" if avg_score >= 80 else ("#F5A623" if avg_score >= 50 else "#E55353")
-    dashoffset = int(314 * (1 - (avg_score / 100)))
-    
-    defects = open_defect_count(project["id"])
-    proj_release = project["release_id"] or "TBD"
-    status_label = "Readiness Optimal" if avg_score >= 80 else ("Perlu Perhatian" if avg_score >= 50 else "Kondisi Kritis")
-    
+def render_dashboard(project: sqlite3.Row) -> None:
+    project_id = project["id"]
+    all_docs   = project_docs(project_id)
+    docs       = project_docs(project_id, approved_only=True)
+    members    = project_members(project_id)
+    blockers   = blocker_signals(project_id)
+
+    pending_docs  = [d for d in all_docs if d["approval_status"] == "Pending"]
+    approved_docs = docs
+    rejected_docs = [d for d in all_docs if d["approval_status"] == "Rejected"]
+    total_chats   = db_rows("select count(*) as cnt from chats where project_id = ?", (project_id,))
+    chat_count    = total_chats[0]["cnt"] if total_chats else 0
+    proj_release  = project["release_id"] or "—"
+    proj_change   = project["change_id"] or "—"
+
+    # ── Factual Project Snapshot Banner ─────────────────────────────────────
+    kpi_items = [
+        ("📋", "Release ID",    proj_release,         "#003F88"),
+        ("🔄", "Change ID",     proj_change,           "#00A6D6"),
+        ("📚", "Total Knowledge", f"{len(all_docs)} docs", "#003F88"),
+        ("✅", "Approved",      f"{len(approved_docs)}", "#20A77B"),
+        ("⏳", "Pending",       f"{len(pending_docs)}",  "#F5A623"),
+        ("👥", "Tim",           f"{len(members)} orang", "#003F88"),
+        ("💬", "Total Q&A",     f"{chat_count} pesan",   "#00A6D6"),
+        ("⚠️", "Sinyal Aktif",  f"{len(blockers)} item",  "#E55353" if blockers else "#20A77B"),
+    ]
+    kpi_html = "".join(
+        f"""<div class="pm-overview-item" style="border-left:3px solid {color}20;">
+              <div class="pm-overview-label">{icon} {label}</div>
+              <div class="pm-overview-val" style="color:{color};">{val}</div>
+            </div>"""
+        for icon, label, val, color in kpi_items
+    )
     st.markdown(
-        f"""
-        <div class="pm-shell" style="padding: 20px 24px; margin-bottom: 20px; background: linear-gradient(135deg, rgba(0,63,136,.06), rgba(0,166,214,.04)), var(--card);">
-            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px;">
-                <div style="display: flex; align-items: center; gap: 20px; min-width: 260px;">
-                    <div style="position: relative; width: 100px; height: 100px; flex-shrink: 0;">
-                        <svg width="100" height="100" viewBox="0 0 120 120">
-                            <circle cx="60" cy="60" r="50" fill="none" stroke="var(--line)" stroke-width="10"/>
-                            <circle cx="60" cy="60" r="50" fill="none" stroke="{gauge_color}" stroke-width="10" 
-                                    stroke-dasharray="314" stroke-dashoffset="{dashoffset}" stroke-linecap="round"
-                                    transform="rotate(-90 60 60)"/>
-                            <text x="60" y="66" text-anchor="middle" font-size="24" font-weight="900" fill="var(--ink)">{avg_score}%</text>
-                        </svg>
-                    </div>
-                    <div>
-                        <div style="font-size: 0.72rem; text-transform: uppercase; font-weight: 800; color: var(--section); letter-spacing: .06em;">Overall Readiness Index</div>
-                        <div style="font-size: 1.2rem; font-weight: 900; color: var(--ink); margin-top: 2px;">{esc(project['name'])}</div>
-                        <div style="margin-top: 6px; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; background: {gauge_color}18; color: {gauge_color}; font-size: 0.76rem; font-weight: 800;">
-                            ● {status_label}
-                        </div>
-                    </div>
-                </div>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; flex-grow: 1; min-width: 280px;">
-                    <div class="pm-overview-item">
-                        <div class="pm-overview-label">📋 Release ID</div>
-                        <div class="pm-overview-val">{esc(proj_release)}</div>
-                    </div>
-                    <div class="pm-overview-item">
-                        <div class="pm-overview-label">🐛 Open Defects</div>
-                        <div class="pm-overview-val" style="color: {'#E55353' if defects > 0 else 'var(--ink)'};">{defects} Open</div>
-                    </div>
-                    <div class="pm-overview-item">
-                        <div class="pm-overview-label">📚 Knowledge</div>
-                        <div class="pm-overview-val">{len(docs)} Approved</div>
-                    </div>
-                    <div class="pm-overview-item">
-                        <div class="pm-overview-label">👥 Tim Member</div>
-                        <div class="pm-overview-val">{len(members)} Orang</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        """,
+        f"""<div class="pm-shell" style="padding:20px 24px; margin-bottom:20px;
+            background:linear-gradient(135deg,rgba(0,63,136,.06),rgba(0,166,214,.04)),var(--card);">
+              <div style="font-size:.72rem;text-transform:uppercase;font-weight:800;
+                  color:var(--section);letter-spacing:.06em;margin-bottom:14px;">
+                📊 Project Snapshot — {esc(project['name'])}
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;">
+                {kpi_html}
+              </div>
+            </div>""",
         unsafe_allow_html=True,
     )
 
-
-def render_interactive_readiness_chart(scores: dict[str, int]) -> None:
-    if not scores:
-        st.info("Belum ada data readiness.")
-        return
-    data = []
-    for label, val in scores.items():
-        status = "Good" if val >= 80 else ("Warning" if val >= 50 else "Critical")
-        data.append({"Domain": label, "Score": val, "Status": status})
-    df = pd.DataFrame(data)
-
-    chart = (
-        alt.Chart(df)
-        .mark_bar(cornerRadiusEnd=6, size=22)
-        .encode(
-            x=alt.X("Score:Q", scale=alt.Scale(domain=[0, 100]), title="Readiness Score (%)"),
-            y=alt.Y("Domain:N", sort=None, title=None),
-            color=alt.Color(
-                "Status:N",
-                scale=alt.Scale(domain=["Good", "Warning", "Critical"], range=["#20A77B", "#F5A623", "#E55353"]),
-                legend=None,
-            ),
-            tooltip=[alt.Tooltip("Domain:N"), alt.Tooltip("Score:Q", title="Score (%)"), alt.Tooltip("Status:N")],
-        )
-        .properties(height=220)
-    )
-
-    target_df = pd.DataFrame([{"Target": 100}])
-    target_rule = alt.Chart(target_df).mark_rule(color="#00A6D6", strokeDash=[4, 4], size=2).encode(x="Target:Q")
-
-    st.altair_chart(chart + target_rule, use_container_width=True)
-
-
-def render_interactive_milestone_chart(milestones: list[dict[str, object]]) -> None:
-    if not milestones:
-        st.info("Belum ada data milestone.")
-        return
-    df = pd.DataFrame(milestones)
-    chart = (
-        alt.Chart(df)
-        .mark_bar(cornerRadiusEnd=6, size=20)
-        .encode(
-            x=alt.X("percent:Q", scale=alt.Scale(domain=[0, 100]), title="Progress (%)"),
-            y=alt.Y("name:N", sort=None, title=None),
-            color=alt.Color(
-                "status:N",
-                scale=alt.Scale(domain=["Done", "In Progress", "Pending"], range=["#20A77B", "#00A6D6", "#F5A623"]),
-                legend=alt.Legend(title="Status", orient="top"),
-            ),
-            tooltip=[alt.Tooltip("name:N", title="Milestone"), alt.Tooltip("percent:Q", title="Progress (%)"), alt.Tooltip("status:N", title="Status"), alt.Tooltip("basis:N", title="Detail Basis")],
-        )
-        .properties(height=220)
-    )
-    st.altair_chart(chart, use_container_width=True)
-
-
-def render_knowledge_distribution_chart(docs: list[sqlite3.Row]) -> None:
-    if not docs:
-        st.info("Belum ada dokumen knowledge.")
-        return
-    type_counts = {}
-    for d in docs:
-        t = (row_get(d, "doc_type") or "file").capitalize()
-        type_counts[t] = type_counts.get(t, 0) + 1
-    df = pd.DataFrame([{"Tipe": k, "Jumlah": v} for k, v in type_counts.items()])
-    
-    chart = (
-        alt.Chart(df)
-        .mark_arc(innerRadius=40, outerRadius=75)
-        .encode(
-            theta=alt.Theta("Jumlah:Q"),
-            color=alt.Color("Tipe:N", scale=alt.Scale(range=["#003F88", "#00A6D6", "#20A77B", "#F5A623"])),
-            tooltip=[alt.Tooltip("Tipe:N"), alt.Tooltip("Jumlah:Q")],
-        )
-        .properties(height=200)
-    )
-    st.altair_chart(chart, use_container_width=True)
-
-
-def render_team_distribution_chart(members: list[sqlite3.Row]) -> None:
-    if not members:
-        st.info("Belum ada anggota tim.")
-        return
-    role_dist = {}
-    for m in members:
-        role_dist[m["role"]] = role_dist.get(m["role"], 0) + 1
-    df = pd.DataFrame([{"Role": k, "Jumlah": v} for k, v in role_dist.items()])
-    
-    chart = (
-        alt.Chart(df)
-        .mark_bar(cornerRadiusEnd=6, size=20)
-        .encode(
-            x=alt.X("Jumlah:Q", title="Jumlah Member"),
-            y=alt.Y("Role:N", sort=None, title=None),
-            color=alt.Color("Role:N", scale=alt.Scale(range=["#003F88", "#00A6D6", "#20A77B", "#F5A623"]), legend=None),
-            tooltip=[alt.Tooltip("Role:N"), alt.Tooltip("Jumlah:Q")],
-        )
-        .properties(height=200)
-    )
-    st.altair_chart(chart, use_container_width=True)
-
-
-def render_dashboard(project: sqlite3.Row) -> None:
-    project_id = project["id"]
-    docs = project_docs(project_id, approved_only=True)
-    all_docs = project_docs(project_id)
-    members = project_members(project_id)
-    blockers = blocker_signals(project_id)
-    milestones = milestone_progress(project_id)
-    metrics = dashboard_metrics(project_id)
-    scores = readiness_scores(project_id)
-
-    # 1. Executive Banner & Visual Gauge
-    render_executive_kpi_banner(project, scores, members, docs, blockers)
-
-    # 2. Interactive Real-time View Filter
-    st.markdown('<div class="pm-section-title" style="margin-bottom: 8px;">🎯 Interactive Filter & Metric Scope</div>', unsafe_allow_html=True)
+    # ── Interactive Filter ────────────────────────────────────────────────────
     view_filter = st.radio(
-        "Scope Filter",
-        ["📊 Multi-chart Visual Overview", "⚙️ Technical & Testing Focus", "⚡ Action Items & Risk Heatmap"],
+        "Pilih tampilan",
+        ["📊 Distribusi Knowledge & Tim", "⚡ Sinyal & Action Items", "🕑 Riwayat Aktivitas"],
         horizontal=True,
-        label_visibility="collapsed"
+        label_visibility="collapsed",
     )
 
-    if view_filter == "📊 Multi-chart Visual Overview":
-        # 3. Side-by-Side Interactive Charts Row 1
-        col_readiness, col_milestone = st.columns([1, 1], gap="large")
-        with col_readiness:
+    # ── View 1 : Distribusi Knowledge & Tim ─────────────────────────────────
+    if view_filter == "📊 Distribusi Knowledge & Tim":
+        col_a, col_b = st.columns(2, gap="large")
+
+        # --- Distribusi Tipe Dokumen (pie/donut, data nyata)
+        with col_a:
             st.markdown(
-                """
-                <div class="pm-section-header">
-                    <div class="pm-section-icon">📈</div>
-                    <div class="pm-section-heading">Domain Readiness Matrix</div>
-                </div>
-                """,
+                """<div class="pm-section-header">
+                     <div class="pm-section-icon">📚</div>
+                     <div class="pm-section-heading">Distribusi Tipe Dokumen</div>
+                   </div>""",
                 unsafe_allow_html=True,
             )
-            render_interactive_readiness_chart(scores)
-        
-        with col_milestone:
+            if all_docs:
+                type_counts: dict[str, int] = {}
+                for d in all_docs:
+                    t = (row_get(d, "doc_type") or "file").capitalize()
+                    type_counts[t] = type_counts.get(t, 0) + 1
+                df_type = pd.DataFrame(
+                    [{"Tipe": k, "Jumlah": v} for k, v in type_counts.items()]
+                )
+                chart_type = (
+                    alt.Chart(df_type)
+                    .mark_arc(innerRadius=50, outerRadius=90)
+                    .encode(
+                        theta=alt.Theta("Jumlah:Q"),
+                        color=alt.Color(
+                            "Tipe:N",
+                            scale=alt.Scale(range=["#003F88", "#00A6D6", "#20A77B", "#F5A623"]),
+                            legend=alt.Legend(orient="bottom"),
+                        ),
+                        tooltip=[alt.Tooltip("Tipe:N"), alt.Tooltip("Jumlah:Q")],
+                    )
+                    .properties(height=230, title="Jumlah dokumen per tipe")
+                )
+                st.altair_chart(chart_type, use_container_width=True)
+            else:
+                st.info("Belum ada dokumen knowledge di workspace ini.")
+
+        # --- Distribusi Status Approval (bar, data nyata)
+        with col_b:
             st.markdown(
-                """
-                <div class="pm-section-header">
-                    <div class="pm-section-icon">🚩</div>
-                    <div class="pm-section-heading">Milestone Completion Progress</div>
-                </div>
-                """,
+                """<div class="pm-section-header">
+                     <div class="pm-section-icon">✅</div>
+                     <div class="pm-section-heading">Status Approval Dokumen</div>
+                   </div>""",
                 unsafe_allow_html=True,
             )
-            render_interactive_milestone_chart(milestones)
+            if all_docs:
+                status_counts: dict[str, int] = {}
+                for d in all_docs:
+                    s = d["approval_status"] or "Unknown"
+                    status_counts[s] = status_counts.get(s, 0) + 1
+                df_status = pd.DataFrame(
+                    [{"Status": k, "Jumlah": v} for k, v in status_counts.items()]
+                )
+                chart_status = (
+                    alt.Chart(df_status)
+                    .mark_bar(cornerRadiusEnd=6, size=32)
+                    .encode(
+                        x=alt.X("Status:N", title=None),
+                        y=alt.Y("Jumlah:Q", title="Jumlah Dokumen"),
+                        color=alt.Color(
+                            "Status:N",
+                            scale=alt.Scale(
+                                domain=["Approved", "Pending", "Rejected"],
+                                range=["#20A77B", "#F5A623", "#E55353"],
+                            ),
+                            legend=None,
+                        ),
+                        tooltip=[alt.Tooltip("Status:N"), alt.Tooltip("Jumlah:Q")],
+                    )
+                    .properties(height=230, title="Approval status dokumen")
+                )
+                st.altair_chart(chart_status, use_container_width=True)
+            else:
+                st.info("Belum ada dokumen untuk ditampilkan.")
 
-        # 4. Side-by-Side Interactive Charts Row 2
-        col_team, col_knowledge = st.columns([1, 1], gap="large")
-        with col_team:
+        col_c, col_d = st.columns(2, gap="large")
+
+        # --- Distribusi Agent Scope (data nyata dari field agent_scope)
+        with col_c:
             st.markdown(
-                """
-                <div class="pm-section-header">
-                    <div class="pm-section-icon">👥</div>
-                    <div class="pm-section-heading">Team Composition by Role</div>
-                </div>
-                """,
+                """<div class="pm-section-header">
+                     <div class="pm-section-icon">🤖</div>
+                     <div class="pm-section-heading">Distribusi Scope per Agent</div>
+                   </div>""",
                 unsafe_allow_html=True,
             )
-            render_team_distribution_chart(members)
+            if all_docs:
+                scope_counts: dict[str, int] = {}
+                for d in all_docs:
+                    sc = d["agent_scope"] or "Unknown"
+                    scope_counts[sc] = scope_counts.get(sc, 0) + 1
+                df_scope = pd.DataFrame(
+                    [{"Scope": k, "Jumlah": v} for k, v in scope_counts.items()]
+                )
+                chart_scope = (
+                    alt.Chart(df_scope)
+                    .mark_bar(cornerRadiusEnd=6, size=28)
+                    .encode(
+                        x=alt.X("Jumlah:Q", title="Jumlah Dokumen"),
+                        y=alt.Y("Scope:N", sort="-x", title=None),
+                        color=alt.Color(
+                            "Scope:N",
+                            scale=alt.Scale(range=["#003F88", "#00A6D6", "#20A77B", "#F5A623", "#9333ea"]),
+                            legend=None,
+                        ),
+                        tooltip=[alt.Tooltip("Scope:N"), alt.Tooltip("Jumlah:Q")],
+                    )
+                    .properties(height=230, title="Berapa dokumen per agent scope")
+                )
+                st.altair_chart(chart_scope, use_container_width=True)
+            else:
+                st.info("Belum ada dokumen.")
 
-        with col_knowledge:
+        # --- Komposisi Tim per Role (data nyata dari tabel members)
+        with col_d:
             st.markdown(
-                """
-                <div class="pm-section-header">
-                    <div class="pm-section-icon">📚</div>
-                    <div class="pm-section-heading">Knowledge Base Distribution</div>
-                </div>
-                """,
+                """<div class="pm-section-header">
+                     <div class="pm-section-icon">👥</div>
+                     <div class="pm-section-heading">Komposisi Tim per Role</div>
+                   </div>""",
                 unsafe_allow_html=True,
             )
-            render_knowledge_distribution_chart(docs)
+            if members:
+                role_counts: dict[str, int] = {}
+                for m in members:
+                    role_counts[m["role"]] = role_counts.get(m["role"], 0) + 1
+                df_role = pd.DataFrame(
+                    [{"Role": k, "Jumlah": v} for k, v in role_counts.items()]
+                )
+                chart_role = (
+                    alt.Chart(df_role)
+                    .mark_arc(innerRadius=50, outerRadius=90)
+                    .encode(
+                        theta=alt.Theta("Jumlah:Q"),
+                        color=alt.Color(
+                            "Role:N",
+                            scale=alt.Scale(range=["#003F88", "#00A6D6", "#20A77B", "#F5A623"]),
+                            legend=alt.Legend(orient="bottom"),
+                        ),
+                        tooltip=[alt.Tooltip("Role:N"), alt.Tooltip("Jumlah:Q")],
+                    )
+                    .properties(height=230, title="Proporsi anggota tim per role")
+                )
+                st.altair_chart(chart_role, use_container_width=True)
+            else:
+                st.info("Belum ada anggota tim yang ditambahkan.")
 
-    elif view_filter == "⚙️ Technical & Testing Focus":
-        col_tech, col_uat = st.columns([1, 1], gap="large")
-        with col_tech:
-            st.markdown('<div class="pm-section-title">⚙️ System & Technical Readiness</div>', unsafe_allow_html=True)
-            sys_score = scores.get("System", 0)
-            st.progress(sys_score / 100, text=f"System Readiness: {sys_score}%")
-            st.markdown(
-                f"""
-                <div class="pm-shell" style="margin-top: 10px;">
-                    <div class="pm-context-label">Status Technical Knowledge</div>
-                    <div style="font-size: .88rem; color: var(--ink);">
-                        {'✅ BRD & Technical Specs sudah di-approve.' if sys_score >= 80 else '⚠️ Diperlukan pengunggahan dokumen teknis tambahan.'}
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+    # ── View 2 : Sinyal & Action Items ───────────────────────────────────────
+    elif view_filter == "⚡ Sinyal & Action Items":
+        col_blk, col_rec = st.columns(2, gap="large")
 
-        with col_uat:
-            st.markdown('<div class="pm-section-title">🧪 Test & UAT Readiness</div>', unsafe_allow_html=True)
-            test_score = scores.get("Test", 0)
-            st.progress(test_score / 100, text=f"Test Readiness: {test_score}%")
-            defects = open_defect_count(project_id)
+        with col_blk:
             st.markdown(
-                f"""
-                <div class="pm-shell" style="margin-top: 10px;">
-                    <div class="pm-context-label">Status Defect UAT</div>
-                    <div style="font-size: .88rem; color: {'#E55353' if defects > 0 else 'var(--accent-green)'}; font-weight: 700;">
-                        {f'🐛 {defects} Open Defect terdeteksi' if defects > 0 else '✅ Bebas dari Open Defect'}
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-    else:  # Action Items & Risk Heatmap
-        act_col, rec_col = st.columns([1, 1], gap="large")
-        with act_col:
-            st.markdown(
-                """
-                <div class="pm-section-header">
-                    <div class="pm-section-icon">⚡</div>
-                    <div class="pm-section-heading">Action Items & Technical Blockers</div>
-                </div>
-                """,
+                """<div class="pm-section-header">
+                     <div class="pm-section-icon">⚡</div>
+                     <div class="pm-section-heading">Sinyal dari Knowledge Base</div>
+                   </div>""",
                 unsafe_allow_html=True,
             )
             if blockers:
-                html = '<div class="pm-shell" style="padding: 12px 20px;">'
-                for signal in blockers:
-                    sev = signal["severity"]
-                    sev_class = {"High": "pm-severity-high", "Medium": "pm-severity-medium", "Low": "pm-severity-low"}.get(sev, "pm-severity-low")
-                    owner = "PO" if "approval" in signal["title"].lower() else ("IT + UAT" if "defect" in signal["title"].lower() else "IT Lead")
-                    html += (
+                html_blk = '<div class="pm-shell" style="padding:12px 20px;">'
+                for sig in blockers:
+                    sev   = sig["severity"]
+                    sev_c = {"High": "pm-severity-high", "Medium": "pm-severity-medium", "Low": "pm-severity-low"}.get(sev, "pm-severity-low")
+                    owner = ("PO" if "approval" in sig["title"].lower()
+                             else "IT + UAT" if "defect" in sig["title"].lower()
+                             else "IT Lead")
+                    html_blk += (
                         f'<div class="pm-action">'
-                        f'<div><strong>{esc(signal["title"])}</strong><br/><span>{esc(signal["body"][:100])}</span></div>'
-                        f'<div style="text-align:right; white-space:nowrap;">'
-                        f'<div class="{sev_class}">{sev}</div>'
-                        f'<div style="font-size:.76rem; color:var(--muted); margin-top:2px;">{owner}</div>'
+                        f'<div><strong>{esc(sig["title"])}</strong><br/>'
+                        f'<span>{esc(sig["body"][:120])}</span></div>'
+                        f'<div style="text-align:right;white-space:nowrap;">'
+                        f'<div class="{sev_c}">{sev}</div>'
+                        f'<div style="font-size:.76rem;color:var(--muted);margin-top:2px;">{owner}</div>'
                         f'</div></div>'
                     )
-                html += '</div>'
-                st.markdown(html, unsafe_allow_html=True)
+                html_blk += '</div>'
+                st.markdown(html_blk, unsafe_allow_html=True)
             else:
-                st.success("✅ Tidak ada action item aktif dari knowledge base saat ini.")
+                st.success("✅ Tidak ada sinyal aktif yang terdeteksi dari knowledge base.")
 
-        with rec_col:
+        with col_rec:
             st.markdown(
-                """
-                <div class="pm-section-header">
-                    <div class="pm-section-icon">💡</div>
-                    <div class="pm-section-heading">Rekomendasi AI Real-time</div>
-                </div>
-                """,
+                """<div class="pm-section-header">
+                     <div class="pm-section-icon">💡</div>
+                     <div class="pm-section-heading">Rekomendasi Berdasarkan Data</div>
+                   </div>""",
                 unsafe_allow_html=True,
             )
-            pending_count = len([d for d in all_docs if d["approval_status"] == "Pending"])
-            defects = open_defect_count(project_id)
-            recs = []
-            if pending_count:
-                recs.append(f"📋 Ada **{pending_count} dokumen** menunggu review PO.")
-            if defects:
-                recs.append(f"🐛 Terdeteksi **{defects} open defect/blocker** di UAT.")
-            if len(members) < 3:
-                recs.append("👥 Unduh lebih banyak anggota tim lintas fungsi (IT, UAT, BA).")
+            recs: list[str] = []
+            if pending_docs:
+                recs.append(f"📋 **{len(pending_docs)} dokumen** belum di-approve PO — agent belum bisa menggunakannya untuk menjawab.")
+            if not any(d["agent_scope"] in {"IT", "All"} for d in approved_docs):
+                recs.append("⚙️ Belum ada knowledge ber-scope **IT** yang approved — Agent IT tidak punya konteks teknis.")
+            if not any(d["agent_scope"] in {"UAT", "All"} for d in approved_docs):
+                recs.append("🧪 Belum ada knowledge ber-scope **UAT** yang approved — Agent UAT tidak punya konteks testing.")
+            if len(members) < 2:
+                recs.append("👥 Tambah lebih banyak anggota tim (IT, BA, UAT) agar kolaborasi lintas biro lebih optimal.")
+            if chat_count == 0:
+                recs.append("💬 Belum ada sesi Q&A. Mulai diskusi di tab **Chat** untuk koordinasi berbasis knowledge.")
             if not recs:
-                recs.append("✅ Project dalam kondisi optimal untuk release.")
+                recs.append("✅ Knowledge base sudah memiliki coverage IT, UAT, dan anggota tim yang memadai.")
 
-            html = '<div class="pm-shell" style="padding: 12px 20px;">'
-            for rec in recs:
-                html += f'<div class="pm-recommendation" style="margin-bottom: 8px; border: none; background: transparent; padding: 6px 0; border-bottom: 1px solid var(--line); border-radius: 0;"><div class="pm-recommendation-text">{rec}</div></div>'
-            html += '</div>'
-            st.markdown(html, unsafe_allow_html=True)
+            html_rec = '<div class="pm-shell" style="padding:14px 20px;">'
+            for r in recs:
+                html_rec += (
+                    f'<div style="padding:8px 0;border-bottom:1px solid var(--line);'
+                    f'font-size:.88rem;color:var(--ink);line-height:1.55;">{r}</div>'
+                )
+            html_rec += "</div>"
+            st.markdown(html_rec, unsafe_allow_html=True)
+
+    # ── View 3 : Riwayat Aktivitas ───────────────────────────────────────────
+    else:
+        col_act, col_doc = st.columns(2, gap="large")
+
+        # --- Aktivitas Upload Dokumen (timeline per tanggal, data nyata)
+        with col_act:
+            st.markdown(
+                """<div class="pm-section-header">
+                     <div class="pm-section-icon">🕑</div>
+                     <div class="pm-section-heading">Aktivitas Upload Dokumen</div>
+                   </div>""",
+                unsafe_allow_html=True,
+            )
+            if all_docs:
+                date_counts: dict[str, int] = {}
+                for d in all_docs:
+                    date_str = (d["created_at"] or "")[:10]
+                    if date_str:
+                        date_counts[date_str] = date_counts.get(date_str, 0) + 1
+                if date_counts:
+                    df_date = pd.DataFrame(
+                        [{"Tanggal": k, "Upload": v} for k, v in sorted(date_counts.items())]
+                    )
+                    chart_act = (
+                        alt.Chart(df_date)
+                        .mark_area(
+                            line={"color": "#003F88", "strokeWidth": 2},
+                            color=alt.Gradient(
+                                gradient="linear",
+                                stops=[
+                                    alt.GradientStop(color="#003F8840", offset=0),
+                                    alt.GradientStop(color="#003F8805", offset=1),
+                                ],
+                                x1=1, x2=1, y1=1, y2=0,
+                            ),
+                            point=True,
+                        )
+                        .encode(
+                            x=alt.X("Tanggal:T", title="Tanggal Upload"),
+                            y=alt.Y("Upload:Q", title="Jumlah Upload"),
+                            tooltip=[alt.Tooltip("Tanggal:T"), alt.Tooltip("Upload:Q")],
+                        )
+                        .properties(height=230, title="Volume upload dokumen per hari")
+                    )
+                    st.altair_chart(chart_act, use_container_width=True)
+                else:
+                    st.info("Belum ada timestamp upload yang tercatat.")
+            else:
+                st.info("Belum ada dokumen knowledge.")
+
+        # --- List knowledge terbaru yang di-approve
+        with col_doc:
+            st.markdown(
+                """<div class="pm-section-header">
+                     <div class="pm-section-icon">📄</div>
+                     <div class="pm-section-heading">Knowledge Terbaru (Approved)</div>
+                   </div>""",
+                unsafe_allow_html=True,
+            )
+            if approved_docs:
+                html_docs = '<div class="pm-shell" style="padding:10px 18px;">'
+                for doc in approved_docs[:8]:
+                    dtype      = row_get(doc, "doc_type") or "file"
+                    icon_map   = {"file": "📄", "note": "📝", "link": "🔗"}
+                    badge_map  = {"file": "official", "note": "note", "link": "link"}
+                    summary    = row_get(doc, "ai_summary") or ""
+                    date_str   = (doc["created_at"] or "")[:10]
+                    html_docs += (
+                        f'<div style="padding:10px 0;border-bottom:1px solid var(--line);">'
+                        f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
+                        f'<span class="pm-pill {badge_map.get(dtype,"draft")}">'
+                        f'{icon_map.get(dtype,"📄")} {dtype.capitalize()}</span>'
+                        f'<span style="font-size:.76rem;color:var(--muted);">{date_str}</span>'
+                        f'</div>'
+                        f'<div style="font-weight:700;font-size:.88rem;color:var(--ink);">'
+                        f'{esc(doc["filename"])}</div>'
+                        f'<div style="font-size:.8rem;color:var(--muted);line-height:1.45;margin-top:2px;">'
+                        f'{esc(summary[:120]) if summary else "—"}</div>'
+                        f'</div>'
+                    )
+                html_docs += "</div>"
+                st.markdown(html_docs, unsafe_allow_html=True)
+            else:
+                st.info("Belum ada knowledge yang approved.")
 
     st.divider()
 
-    # 5. Interactive Accordion FAQ (Expandable to avoid long text walls)
+    # ── FAQ Accordion dari Riwayat Chat (AI-Generated, genuine) ─────────────
     st.markdown(
-        """
-        <div class="pm-section-header">
-            <div class="pm-section-icon">❓</div>
-            <div class="pm-section-heading">Interactive FAQ Accordion</div>
-        </div>
-        """,
+        """<div class="pm-section-header">
+             <div class="pm-section-icon">❓</div>
+             <div class="pm-section-heading">FAQ — dari Riwayat Koordinasi Chat</div>
+           </div>""",
         unsafe_allow_html=True,
     )
     faqs = generate_faq(project_id)
