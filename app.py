@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -170,9 +169,16 @@ def ensure_storage() -> None:
         for col, stmt in {
             "notes": "alter table projects add column notes text",
             "knowledge_links": "alter table projects add column knowledge_links text",
+            "created_by": "alter table projects add column created_by text",
         }.items():
             if col not in proj_cols:
                 conn.execute(stmt)
+
+        # Backfill created_by for legacy projects (no owner recorded)
+        conn.execute(
+            "update projects set created_by = coalesce(created_by, ?) where created_by is null or created_by = ''",
+            (LOGIN_USERNAME,),
+        )
 
         # Migrations for members
         mem_cols = {row[1] for row in conn.execute("pragma table_info(members)")}
@@ -246,26 +252,19 @@ def projects() -> list[sqlite3.Row]:
     return db_rows("select * from projects order by created_at desc")
 
 
-def create_project(name: str, description: str, release_id: str = "", change_id: str = "", notes: str = "", knowledge_links: list[dict] | None = None) -> str:
+def create_project(name: str, description: str, release_id: str = "", change_id: str = "", notes: str = "", knowledge_links: list[dict] | None = None, created_by: str = "") -> str:
     project_id = f"{slugify(name)}-{stable_id(name, now_iso())[:6]}"
     active_agents = json.dumps(["Coordinator", "IT", "UAT"])
     links_json = json.dumps(knowledge_links or [])
+    owner = created_by or st.session_state.get("username", LOGIN_USERNAME)
     db_execute(
         """
-        insert into projects (id, name, release_id, change_id, description, notes, knowledge_links, active_agents, created_at)
-        values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        insert into projects (id, name, release_id, change_id, description, notes, knowledge_links, active_agents, created_by, created_at)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (project_id, name, release_id, change_id, description, notes, links_json, active_agents, now_iso()),
+        (project_id, name, release_id, change_id, description, notes, links_json, active_agents, owner, now_iso()),
     )
     return project_id
-
-
-def normalized_agents(active_agents: list[str]) -> list[str]:
-    ordered = ["Coordinator"]
-    for key in active_agents:
-        if key in AGENTS and key != "Coordinator" and key not in ordered:
-            ordered.append(key)
-    return ordered
 
 
 def seed_sample_project() -> str:
@@ -276,6 +275,7 @@ def seed_sample_project() -> str:
         "CHG-88021",
         "Project ini mencakup perubahan validasi transaksi, update flow program settlement, dan penambahan monitoring batch.",
         [{"url": "https://confluence.bca.id/qr-settlement", "label": "Confluence - QR Settlement"}],
+        created_by="cloverteam",
     )
     for nip, nama, username, role, unit in [
         ("12345678", "Budi Santoso", "cloverteam", "PO", "ITX IDS"),
@@ -285,6 +285,18 @@ def seed_sample_project() -> str:
         ("56789012", "Dewi Lestari", "po.owner04", "PO", "SSI D"),
     ]:
         add_member(project_id, username, role, nip=nip, nama=nama, unit=unit)
+
+    save_document(
+        project_id,
+        "Scope_notes_running.txt",
+        "Draft",
+        "All",
+        "Catatan berjalan: approval change CHG-88021 menunggu PIC teknis, konfigurasi baru untuk validasi limit belum di-deploy ke UAT. Batch monitoring butuh runbook update.",
+        doc_type="file",
+        ai_summary="Catatan berjalan scope: approval change menunggu PIC, konfigurasi validasi limit belum di-deploy, runbook batch monitoring perlu update.",
+        approval_status="Pending",
+        uploaded_by="uat.lead02",
+    )
     save_document(
         project_id,
         "BRD_scope_release.txt",
@@ -450,7 +462,7 @@ def save_document(
     text: str,
     doc_type: str = "file",
     ai_summary: str | None = None,
-    approval_status: str = "Approved",
+    approval_status: str = "Pending",
     uploaded_by: str = "unknown",
     approved_by: str | None = None,
 ) -> None:
@@ -473,6 +485,26 @@ def save_document(
     )
 
 
+def update_document(document_id: str, text: str, label: str, agent_scope: str, filename: str, doc_type: str) -> None:
+    """In-place edit of an indexed document. Any edit re-opens approval (Pending) for creator review."""
+    rows = db_rows("select project_id from documents where id = ?", (document_id,))
+    project_id = rows[0]["project_id"] if rows else ""
+    doc_id = stable_id(project_id, filename, now_iso())
+    path = UPLOAD_DIR / project_id
+    path.mkdir(parents=True, exist_ok=True)
+    (path / f"{doc_id}.txt").write_text(text, encoding="utf-8")
+    ai_summary = generate_ai_summary(filename, doc_type, text)
+    db_execute(
+        """
+        update documents
+        set text = ?, ai_summary = ?, source_label = ?, agent_scope = ?, filename = ?, doc_type = ?,
+            approval_status = 'Pending', approved_by = null, approved_at = null
+        where id = ?
+        """,
+        (text, ai_summary, label, agent_scope, filename, doc_type, document_id),
+    )
+
+
 def approve_document(document_id: str, approved_by: str) -> None:
     db_execute(
         """
@@ -484,19 +516,24 @@ def approve_document(document_id: str, approved_by: str) -> None:
     )
 
 
-def can_approve_sources(project_id: str) -> bool:
-    username = st.session_state.get("username", "")
-    if username == LOGIN_USERNAME:
-        return True
-    roles = {member["role"] for member in project_members(project_id) if member["username"] == username}
-    return bool(roles & {"PO"})
+def project_creator(project_id: str) -> str:
+    rows = db_rows("select created_by from projects where id = ?", (project_id,))
+    return rows[0]["created_by"] or "" if rows else ""
+
+
+def current_user() -> str:
+    return st.session_state.get("username", "")
 
 
 def current_project_roles(project_id: str) -> set[str]:
-    username = st.session_state.get("username", "")
-    if username == LOGIN_USERNAME:
-        return {"PO"}
+    username = current_user()
+    if username == project_creator(project_id):
+        return {"Owner"}
     return {member["role"] for member in project_members(project_id) if member["username"] == username}
+
+
+def can_approve_sources(project_id: str) -> bool:
+    return current_user() == project_creator(project_id)
 
 
 def can_upload_sources(project_id: str) -> bool:
@@ -545,18 +582,6 @@ def confidence_for(sources: list[Source]) -> str:
     return "Low"
 
 
-def status_tone(value: int) -> str:
-    if value >= 75:
-        return "green"
-    if value >= 55:
-        return "amber"
-    return "red"
-
-
-def source_badge(label: str) -> str:
-    return label
-
-
 def answer_question(project_id: str, agent: str, question: str) -> tuple[str, list[Source], str]:
     sources = keyword_search(project_id, question, agent)
     confidence = confidence_for(sources)
@@ -579,7 +604,7 @@ def answer_question(project_id: str, agent: str, question: str) -> tuple[str, li
     return answer, sources, confidence
 
 
-def coordinator_verbose_answer(project_id: str, question: str, sources: list[Source]) -> str:
+def coordinator_verbose_answer(project_id: str, question: str, sources: list[Source], agents: list[str]) -> str:
     members = project_members(project_id)
     docs = project_docs(project_id, approved_only=True)
     pending_docs = [doc for doc in project_docs(project_id) if doc["approval_status"] == "Pending"]
@@ -589,11 +614,13 @@ def coordinator_verbose_answer(project_id: str, question: str, sources: list[Sou
     if not doc_signal:
         doc_signal = "  - Belum ada sumber yang match langsung dengan pertanyaan ini."
 
-    it_sources = keyword_search(project_id, question, "IT", limit=2)
-    uat_sources = keyword_search(project_id, question, "UAT", limit=2)
-
-    it_insight = it_sources[0].snippet[:150] if it_sources else "Tidak ada konteks teknis yang relevan saat ini."
-    uat_insight = uat_sources[0].snippet[:150] if uat_sources else "Tidak ada konteks UAT yang relevan saat ini."
+    agent_sections = []
+    for key in agents:
+        agent_name = AGENTS[key]["name"]
+        scope_sources = keyword_search(project_id, question, key, limit=2)
+        insight = scope_sources[0].snippet[:150] if scope_sources else "Tidak ada konteks yang relevan saat ini."
+        agent_sections.append(f"**{AGENTS[key]['icon']} {agent_name}** dihubungi:\n> {insight}")
+    dispatched = "\n\n".join(agent_sections)
 
     blockers = blocker_signals(project_id)
     blocker_text = "\n".join(f"  - [{s['severity']}] {s['title']}" for s in blockers[:3]) if blockers else "  - Tidak ada blocker aktif."
@@ -604,11 +631,7 @@ def coordinator_verbose_answer(project_id: str, question: str, sources: list[Sou
 
         ---
 
-        **⚙️ Agent IT** dihubungi:
-        > {it_insight}
-
-        **🧪 Agent UAT** dihubungi:
-        > {uat_insight}
+        {dispatched}
 
         ---
 
@@ -635,7 +658,8 @@ def coordinator_verbose_answer(project_id: str, question: str, sources: list[Sou
 
 
 def coordinator_answer(project_id: str, question: str, sources: list[Source]) -> str:
-    return coordinator_verbose_answer(project_id, question, sources)
+    agents = delegate_agents(question)
+    return coordinator_verbose_answer(project_id, question, sources, agents)
 
 
 def store_chat(project_id: str, agent: str, role: str, content: str, sources: list[Source] | None = None, confidence: str | None = None) -> None:
@@ -696,7 +720,7 @@ def blocker_signals(project_id: str) -> list[dict[str, str]]:
             {
                 "severity": "Medium",
                 "title": f"{len(pending_docs)} source pending approval",
-                "body": "Source pending belum dipakai agent untuk menjawab sampai PO approve.",
+                "body": "Source pending belum dipakai agent untuk menjawab sampai di-approve creator workspace.",
                 "tone": "informal",
             }
         )
@@ -706,6 +730,27 @@ def blocker_signals(project_id: str) -> list[dict[str, str]]:
     if not (scopes & {"UAT", "All"}):
         signals.append({"severity": "Low", "title": "Missing approved UAT source", "body": "Agent UAT belum punya dokumen approved untuk readiness, defect, atau evidence.", "tone": "informal"})
     return signals[:5]
+
+
+TECH_TERMS = ["runbook", "deploy", "rollback", "server", "api", "database", "schema", "config", "migration", "batch", "job", "flow", "architecture", "dependency", "integration", "code", "bug fix", "patch", "environment", "test env"]
+UAT_TERMS = ["uat", "defect", "test case", "test scenario", "evidence", "sign-off", "signoff", "retest", "readiness", "regression", "blocker", "severity", "priority", "retest", "uat sign", "cacat", "uji"]
+BLOCKER_TERMS = ["blocker", "stuck", "terhambat", "urgent", "kendala", "menunggu"]
+ADMIN_TERMS = ["siapa", "anggota", "member", "tim", "role", "pengurus", "komposisi"]
+
+
+def delegate_agents(question: str) -> list[str]:
+    """Agentic dispatch: route a question to the specialist agent(s) that should answer it."""
+    q = question.lower()
+    score_it = sum(1 for term in TECH_TERMS if term in q)
+    score_uat = sum(1 for term in UAT_TERMS if term in q)
+    routed = []
+    if score_it > 0:
+        routed.append("IT")
+    if score_uat > 0:
+        routed.append("UAT")
+    if not routed or any(term in q for term in BLOCKER_TERMS + ADMIN_TERMS):
+        routed.append("Coordinator")
+    return routed
 
 
 def inject_css() -> None:
@@ -2140,7 +2185,6 @@ def render_header(project: sqlite3.Row | None) -> None:
     
     if project:
         p_id = project["id"]
-        members_count = len(project_members(p_id))
         docs_count = len(project_docs(p_id))
         links_count = len(json.loads(row_get(project, "knowledge_links") or "[]"))
         
@@ -2333,10 +2377,10 @@ def render_project_creator() -> str | None:
                     • Change ID & Release ID<br/>
                     • Notes koordinasi tambahan<br/>
                     • Link ke Confluence, Jira, dll.<br/><br/>
-                    <strong style="color: var(--ink);">Otomatis aktif:</strong><br/>
-                    • AI Coordinator (otak workspace)<br/>
-                    • Agent IT (scope teknis)<br/>
-                    • Agent UAT (readiness & defect)
+                    <strong style="color: var(--ink);">Alur knowledge:</strong><br/>
+                    • Upload di-extract & di-summarize otomatis<br/>
+                    • Menunggu approval creator workspace<br/>
+                    • Baru dipakai agent setelah di-approve
                 </div>
             </div>
             """,
@@ -2436,10 +2480,6 @@ def render_sidebar() -> sqlite3.Row | None:
     return selected_project
 
 
-def render_top_controls() -> None:
-    pass
-
-
 def render_members(project_id: str) -> None:
     left, right = st.columns([1.3, 1], gap="large")
     with left:
@@ -2498,7 +2538,7 @@ def render_members(project_id: str) -> None:
             unsafe_allow_html=True,
         )
         st.markdown(
-            '<div class="pm-governance">PO dapat mengundang member baru. Member mendapat akses sesuai role yang diberikan.</div>',
+            f'<div class="pm-governance">Creator workspace ({esc(project_creator(project_id))}) dapat mengundang member baru dan meng-approve knowledge. Member mendapat akses sesuai role yang diberikan.</div>',
             unsafe_allow_html=True,
         )
         if can_approve_sources(project_id):
@@ -2518,7 +2558,7 @@ def render_members(project_id: str) -> None:
                     st.success(f"✅ Member berhasil ditambahkan: {nama} ({role} - {unit})")
                     st.rerun()
         else:
-            st.info("Hanya PO yang bisa menambah member.")
+            st.info("Hanya creator workspace yang bisa menambah member.")
 
 
 def render_knowledge(project_id: str) -> None:
@@ -2559,16 +2599,12 @@ def render_knowledge(project_id: str) -> None:
                     extracted = extract_text(uploaded)
                     text = "\n\n".join(part for part in [extracted, manual_notes.strip()] if part)
                     if text.strip():
-                        ai_sum = generate_ai_summary(uploaded.name, "file", text)
                         save_document(
                             project_id, uploaded.name, "Official", "All", text,
-                            doc_type="file", ai_summary=ai_sum,
-                            approval_status="Approved",
+                            doc_type="file",
                             uploaded_by=st.session_state.get("username", "unknown"),
-                            approved_by=st.session_state.get("username", "unknown"),
                         )
-                        st.success(f"✅ **{uploaded.name}** berhasil diindeks ke knowledge base.")
-                        st.session_state["last_summary"] = ai_sum
+                        st.success(f"✅ **{uploaded.name}** diindeks dan menunggu approval creator.")
                         st.rerun()
                     else:
                         st.warning("Tidak ada teks yang bisa di-index dari file tersebut.")
@@ -2589,16 +2625,12 @@ def render_knowledge(project_id: str) -> None:
                         st.warning("⚠️ Judul dan isi catatan wajib diisi.")
                     else:
                         filename = f"note_{slugify(note_title)}.txt"
-                        ai_sum = generate_ai_summary(note_title, "note", note_text)
                         save_document(
                             project_id, filename, "Draft", "All", note_text,
-                            doc_type="note", ai_summary=ai_sum,
-                            approval_status="Approved",
+                            doc_type="note",
                             uploaded_by=st.session_state.get("username", "unknown"),
-                            approved_by=st.session_state.get("username", "unknown"),
                         )
-                        st.success(f"✅ Catatan **{note_title}** berhasil disimpan.")
-                        st.session_state["last_summary"] = ai_sum
+                        st.success(f"✅ Catatan **{note_title}** disimpan dan menunggu approval creator.")
                         st.rerun()
 
             else:  # Link URL
@@ -2622,23 +2654,27 @@ def render_knowledge(project_id: str) -> None:
                         save_document(
                             project_id, filename, "Informal", "All", content,
                             doc_type="link", ai_summary=ai_sum,
-                            approval_status="Approved",
                             uploaded_by=st.session_state.get("username", "unknown"),
-                            approved_by=st.session_state.get("username", "unknown"),
                         )
-                        st.success(f"✅ Link **{label_text}** berhasil ditambahkan.")
-                        st.session_state["last_summary"] = ai_sum
+                        st.success(f"✅ Link **{label_text}** ditambahkan dan menunggu approval creator.")
                         st.rerun()
         else:
-            st.info("Viewer hanya bisa membaca knowledge yang sudah ada.")
+            st.info("Hanya member workspace yang bisa menambah knowledge.")
 
-        # Indexed sources table
+        # Indexed sources table (filterable by status)
         docs = project_docs(project_id)
         if docs:
             st.markdown('<div class="pm-section-title" style="margin-top: 24px;">Semua Knowledge yang Diindeks</div>', unsafe_allow_html=True)
+            status_options = ["Semua", "Approved", "Pending"]
+            default_status = "Pending" if any(d["approval_status"] == "Pending" for d in docs) else "Semua"
+            status_filter = st.selectbox("Filter status", status_options, index=status_options.index(default_status), label_visibility="collapsed")
+            if status_filter != "Semua":
+                docs = [d for d in docs if d["approval_status"] == status_filter]
             df = pd.DataFrame([{
                 "Nama": d["filename"],
-                "Tipe": row_get(d, "doc_type") or "file",
+                "Tipe": (row_get(d, "doc_type") or "file").capitalize(),
+                "Label": d["source_label"],
+                "Status": d["approval_status"],
                 "Uploaded": (d["created_at"] or "")[:10],
                 "Oleh": d["uploaded_by"] or "-",
             } for d in docs])
@@ -2695,8 +2731,63 @@ def render_knowledge(project_id: str) -> None:
                 unsafe_allow_html=True,
             )
 
-        # Knowledge Base list
-        st.markdown('<div class="pm-section-title" style="margin-top: 4px;">Knowledge Base</div>', unsafe_allow_html=True)
+        # ── Manage Documents: edit content in-app / approve pending ──────────────
+        all_docs = project_docs(project_id)
+        pending_docs = [d for d in all_docs if d["approval_status"] == "Pending"]
+        is_creator = can_approve_sources(project_id)
+
+        if pending_docs and is_creator:
+            st.markdown('<div class="pm-section-title" style="margin-top: 4px;">⏳ Menunggu Approval</div>', unsafe_allow_html=True)
+            for d in pending_docs:
+                st.markdown(
+                    f"""
+                    <div class="pm-source" style="border-left-color: #F5A623;">
+                        <div class="pm-source-title">{esc(d['filename'])}</div>
+                        <div class="pm-source-body">{esc(row_get(d, 'ai_summary') or d['text'][:160])}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                if st.button("✅ Approve", key=f"approve_{d['id']}"):
+                    approve_document(d["id"], st.session_state.get("username", "unknown"))
+                    st.success(f"✅ **{d['filename']}** di-approve dan aktif untuk agent.")
+                    st.rerun()
+
+        if all_docs:
+            st.markdown('<div class="pm-section-title" style="margin-top: 4px;">🛠️ Kelola Dokumen</div>', unsafe_allow_html=True)
+            edit_options = [f"{d['filename']}  ·  {d['approval_status']}" for d in all_docs]
+            edit_idx = st.selectbox("Pilih dokumen", range(len(all_docs)), format_func=lambda i: edit_options[i], label_visibility="collapsed")
+            sel_doc = all_docs[edit_idx]
+            with st.form(f"edit_doc_{sel_doc['id']}"):
+                new_label = st.selectbox(
+                    "Label kepercayaan",
+                    ["Official", "Draft", "Informal"],
+                    index=["Official", "Draft", "Informal"].index(sel_doc["source_label"]),
+                )
+                new_scope = st.selectbox(
+                    "Konteks agent",
+                    ["All", "IT", "UAT"],
+                    index=["All", "IT", "UAT"].index(sel_doc["agent_scope"]),
+                )
+                new_text = st.text_area("Isi dokumen (edit langsung)", value=sel_doc["text"], height=140)
+                saved = st.form_submit_button("💾 Simpan Perubahan", use_container_width=True, type="primary")
+            if saved:
+                if new_text.strip():
+                    update_document(
+                        sel_doc["id"], new_text, new_label, new_scope, sel_doc["filename"],
+                        row_get(sel_doc, "doc_type") or "file",
+                    )
+                    st.info(f"✏️ **{sel_doc['filename']}** diperbarui. " + ("Review versi terbaru lalu approve." if is_creator else "Menunggu approval creator workspace."))
+                    st.rerun()
+                else:
+                    st.warning("⚠️ Isi dokumen tidak boleh kosong.")
+            if st.button("🗑️ Hapus Dokumen", key=f"delete_{sel_doc['id']}"):
+                db_execute("delete from documents where id = ?", (sel_doc["id"],))
+                st.success(f"🗑️ **{sel_doc['filename']}** dihapus.")
+                st.rerun()
+
+        # Knowledge Base list (approved only — sources agents actually use)
+        st.markdown('<div class="pm-section-title" style="margin-top: 4px;">Knowledge Base Aktif</div>', unsafe_allow_html=True)
         if docs:
             for doc in docs[:8]:
                 ai_sum = row_get(doc, "ai_summary") or ""
@@ -2707,6 +2798,7 @@ def render_knowledge(project_id: str) -> None:
                     f"""
                     <div class="pm-source">
                         <span class="pm-pill {type_badge_class}">{type_icon} {doc_type.capitalize()}</span>
+                        <span class="pm-pill {doc['source_label'].lower()}">{esc(doc['source_label'])}</span>
                         <div class="pm-source-title">{esc(doc['filename'])}</div>
                         <div class="pm-source-body">{esc(ai_sum[:180]) if ai_sum else esc(doc['text'][:180])}</div>
                     </div>
@@ -2714,28 +2806,7 @@ def render_knowledge(project_id: str) -> None:
                     unsafe_allow_html=True,
                 )
         else:
-            st.info("Belum ada knowledge. Upload dokumen, tambah catatan, atau masukkan link penting.")
-
-
-def render_readiness_strip(scores: dict[str, int]) -> None:
-    cards = []
-    for label, value in scores.items():
-        tone = status_tone(value)
-        cards.append(
-            f'<div class="pm-readiness"><div class="pm-readiness-label">{label}</div><div class="pm-readiness-value">{value}%</div><div class="pm-bar"><div class="pm-fill {tone}" style="width:{value}%"></div></div></div>'
-        )
-    st.markdown(f'<div class="pm-readiness-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
-
-
-def render_dashboard_cards(metrics: dict[str, tuple[str, str]]) -> None:
-    cards = []
-    icons = {"Deadline": "📅", "Remaining": "⏳", "Progress": "📈", "Blockers": "🚧", "Open Defects": "🐛", "Next Gate": "🚀"}
-    for label, (value, hint) in metrics.items():
-        icon = icons.get(label, "📊")
-        cards.append(
-            f'<div class="pm-dashboard-card"><div class="pm-dashboard-label">{icon} {esc(label)}</div><div class="pm-dashboard-value">{esc(value)}</div><div class="pm-dashboard-hint">{esc(hint)}</div></div>'
-        )
-    st.markdown(f'<div class="pm-dashboard-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
+            st.info("Belum ada knowledge aktif. Approve dokumen pending atau upload yang baru.")
 
 
 def render_chat(project: sqlite3.Row) -> None:
@@ -2779,7 +2850,6 @@ def render_chat(project: sqlite3.Row) -> None:
                 conf_color = {"High": "#20A77B", "Medium": "#F5A623", "Low": "#E55353"}.get(conf, "#6b7280")
                 st.markdown(f'<span class="pm-chip" style="border-color:{conf_color}40; color:{conf_color};">Confidence: {conf}</span>', unsafe_allow_html=True)
             for source in json.loads(latest[0]["sources"])[:5]:
-                label_class = source["label"].lower()
                 st.markdown(
                     f"""
                     <div class="pm-source">
@@ -2909,8 +2979,8 @@ def generate_ai_project_overview(project: sqlite3.Row) -> str:
     chg_id = esc(project['change_id'] or 'TBD')
 
     if not docs:
-        return f"Project <b>{proj_name}</b> (Release: <code>{rel_id}</code>) saat ini belum memiliki dokumen resmi yang di-approve oleh PO. Unggah BRD atau dokumen teknis di tab <b>Knowledge</b> untuk mengaktifkan ringkasan otomatis berbasis Agentic AI."
-    
+        return f"Project <b>{proj_name}</b> (Release: <code>{rel_id}</code>) saat ini belum memiliki dokumen resmi yang di-approve. Unggah BRD atau dokumen teknis di tab <b>Knowledge</b> untuk mengaktifkan ringkasan otomatis berbasis Agentic AI."
+
     summaries = [row_get(d, "ai_summary") or d["text"] for d in docs if row_get(d, "ai_summary") or d["text"]]
     overview_text = " ".join(summaries[:3]) if summaries else "Dokumen project telah diunggah dan di-index oleh Agent IT & UAT untuk mendukung koordinasi otomatis."
     return f"Project <b>{proj_name}</b> (Release Target: <code>{rel_id}</code>, Change ID: <code>{chg_id}</code>) berfokus pada efisiensi koordinasi lintas biro BCA. {esc(overview_text)}"
@@ -2940,9 +3010,9 @@ def generate_action_items(project_id: str) -> list[dict[str, str]]:
     if pending_docs:
         items.append({
             "severity": "High",
-            "title": f"Review & approve {len(pending_docs)} dokumen pending oleh PO",
-            "body": "Dokumen pending perlu di-approve Product Owner (PO) agar Agentic AI dapat menggunakannya sebagai konteks resmi.",
-            "owner": "PO",
+            "title": f"Review & approve {len(pending_docs)} dokumen pending",
+            "body": "Dokumen pending perlu di-approve creator workspace agar Agentic AI dapat menggunakannya sebagai konteks resmi.",
+            "owner": "Project Owner",
             "date": (base_date + timedelta(days=2)).strftime("%d %b %Y")
         })
         
@@ -2968,8 +3038,6 @@ def render_dashboard(project: sqlite3.Row) -> None:
     members    = project_members(project_id)
     action_items = generate_action_items(project_id)
     
-    total_chats = db_rows("select count(*) as cnt from chats where project_id = ?", (project_id,))
-    chat_count  = total_chats[0]["cnt"] if total_chats else 0
     defects_count = open_defect_count(project_id)
 
     st.markdown(
@@ -3221,7 +3289,6 @@ def main() -> None:
     ensure_sample_project()
 
     project = render_sidebar()
-    render_top_controls()
 
     if st.session_state.get("show_create"):
         render_header(None)
