@@ -2986,15 +2986,9 @@ def render_dashboard(project: sqlite3.Row) -> None:
 
     st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
 
-    # ── General Knowledge Summary Header Banner (Full-Width) ────────────────────
-    st.markdown(
-        """<div class="pm-section-header">
-             <div class="pm-section-icon">📌</div>
-             <div class="pm-section-heading">General Knowledge Project Summary</div>
-           </div>""",
-        unsafe_allow_html=True,
-    )
+    st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
 
+    # ── Full-Width Summary Banner (Tanpa Header Label Redundant) ──────────────────
     ai_overview = generate_ai_project_overview(project)
     rel_id_str = esc(project['release_id'] or 'TBD')
     chg_id_str = esc(project['change_id'] or 'TBD')
@@ -3005,8 +2999,8 @@ def render_dashboard(project: sqlite3.Row) -> None:
         f"""
         <div class="pm-shell" style="padding:20px 24px; margin-bottom:20px; background:linear-gradient(135deg, rgba(0,63,136,.06), rgba(0,166,214,.04)), var(--card);">
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
-                <div style="font-size:0.78rem; font-weight:800; text-transform:uppercase; color:var(--brand); letter-spacing:.06em; display:flex; align-items:center; gap:6px;">
-                    <span>🧠 AI-Generated Knowledge Overview</span>
+                <div style="font-size:0.75rem; font-weight:800; text-transform:uppercase; color:var(--brand); letter-spacing:.06em;">
+                    📋 Overview & Context Project
                 </div>
                 <span style="font-size:0.72rem; background:linear-gradient(135deg,#003F88,#00A6D6); color:white; padding:3px 10px; border-radius:12px; font-weight:700;">
                     Auto Synthesized
@@ -3044,68 +3038,73 @@ def render_dashboard(project: sqlite3.Row) -> None:
 
     st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
 
-    # ── Visual Timeline & Target HK ──────────────────────────────────────────────
+    # ── Visual Timeline & Target HK Project (Custom Responsive Card) ──────────────
     st.markdown(
         """<div class="pm-section-header">
              <div class="pm-section-icon">📅</div>
-             <div class="pm-section-heading">Visual Timeline & Target HK Project (Generated from Knowledge Base)</div>
+             <div class="pm-section-heading">Visual Timeline & Target HK Project</div>
            </div>""",
         unsafe_allow_html=True,
     )
 
     phases = extract_project_timeline(project_id)
-    df_timeline = pd.DataFrame(phases)
 
-    col_chart, col_phase_details = st.columns([2, 1], gap="large")
+    # Gradient progress line
+    timeline_cards_html = ""
+    biro_icons = {"BA": "👔", "IT": "⚙️", "UAT": "🧪", "Lintas Biro": "🚀"}
+    
+    for idx, phase in enumerate(phases):
+        status_color = phase.get("Color", "#003F88")
+        status_lbl = phase["Status"]
+        status_bg = f"{status_color}18"
+        icon = biro_icons.get(str(phase["Biro"]), "📌")
+        
+        start_fmt = phase["Start"]
+        end_fmt = phase["End"]
+        
+        timeline_cards_html += f"""
+        <div style="flex:1; min-width:220px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; border-top:4px solid {status_color}; display:flex; flex-direction:column; justify-content:space-between; position:relative;">
+            <div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-size:0.72rem; font-weight:800; padding:2px 8px; border-radius:10px; background:{status_bg}; color:{status_color}; border:1px solid {status_color}30;">
+                        {icon} Biro {phase['Biro']}
+                    </span>
+                    <span style="font-size:0.72rem; font-weight:800; color:var(--brand);">
+                        {phase['HK']}
+                    </span>
+                </div>
+                <div style="font-size:0.9rem; font-weight:800; color:var(--ink); margin-bottom:4px; line-height:1.35;">
+                    {phase['Fase']}
+                </div>
+                <div style="font-size:0.75rem; color:var(--muted); font-weight:600; margin-bottom:10px;">
+                    📅 {start_fmt} ➔ {end_fmt}
+                </div>
+            </div>
+            <div style="display:flex; align-items:center; justify-content:space-between; border-top:1px solid var(--line); padding-top:8px;">
+                <span style="font-size:0.7rem; color:var(--muted); font-weight:600;">Status Phase</span>
+                <span style="font-size:0.72rem; font-weight:800; color:{status_color};">● {status_lbl}</span>
+            </div>
+        </div>
+        """
 
-    with col_chart:
-        # Palette matching ProjectMind (#003F88, #00A6D6, #20A77B, #F5A623)
-        chart_timeline = (
-            alt.Chart(df_timeline)
-            .mark_bar(cornerRadius=6, height=24)
-            .encode(
-                x=alt.X("Start:T", title="Timeline Jadwal Project"),
-                x2="End:T",
-                y=alt.Y("Fase:N", sort=None, title=None),
-                color=alt.Color(
-                    "Biro:N",
-                    scale=alt.Scale(
-                        domain=["BA", "IT", "UAT", "Lintas Biro"],
-                        range=["#003F88", "#00A6D6", "#20A77B", "#F5A623"]
-                    ),
-                    legend=alt.Legend(orient="top", title="Biro Penanggung Jawab")
-                ),
-                tooltip=[
-                    alt.Tooltip("Fase:N", title="Fase Project"),
-                    alt.Tooltip("Biro:N", title="Biro Penanggung Jawab"),
-                    alt.Tooltip("HK:N", title="Target HK"),
-                    alt.Tooltip("Start:T", title="Mulai"),
-                    alt.Tooltip("End:T", title="Target Selesai"),
-                    alt.Tooltip("Status:N", title="Status Progress")
-                ]
-            )
-            .properties(height=220)
-        )
-        st.altair_chart(chart_timeline, use_container_width=True)
-
-    with col_phase_details:
-        html_phases = '<div class="pm-shell" style="padding:14px 18px;">'
-        html_phases += '<div style="font-size:0.75rem; font-weight:800; text-transform:uppercase; color:var(--brand); margin-bottom:10px;">🎯 Target HK & Milestone</div>'
-        for phase in phases:
-            status_bg = "#20A77B" if phase["Status"] == "Selesai" else ("#00A6D6" if "Proses" in str(phase["Status"]) else "#F5A623")
-            html_phases += (
-                f'<div style="padding:8px 0; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center;">'
-                f'<div>'
-                f'<div style="font-size:0.83rem; font-weight:700; color:var(--ink);">{phase["Fase"]}</div>'
-                f'<div style="font-size:0.74rem; color:var(--muted);">Biro {phase["Biro"]} • Target {phase["HK"]}</div>'
-                f'</div>'
-                f'<span style="font-size:0.7rem; font-weight:800; padding:3px 10px; border-radius:12px; background:{status_bg}18; color:{status_bg}; border:1px solid {status_bg}40; white-space:nowrap;">'
-                f'{phase["Status"]}'
-                f'</span>'
-                f'</div>'
-            )
-        html_phases += '</div>'
-        st.markdown(html_phases, unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <div class="pm-shell" style="padding:18px 20px; margin-bottom:20px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;">
+                <div style="font-size:0.75rem; font-weight:800; text-transform:uppercase; color:var(--brand); letter-spacing:.05em;">
+                    🚀 Milestone & Ritme Kerja Lintas Biro BCA
+                </div>
+                <div style="font-size:0.74rem; color:var(--muted); font-weight:600;">
+                    Disintesis dari Knowledge Base Project
+                </div>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:12px; justify-content:space-between; position:relative;">
+                {timeline_cards_html}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
 
