@@ -706,27 +706,6 @@ def blocker_signals(project_id: str) -> list[dict[str, str]]:
     if not (scopes & {"UAT", "All"}):
         signals.append({"severity": "Low", "title": "Missing approved UAT source", "body": "Agent UAT belum punya dokumen approved untuk readiness, defect, atau evidence.", "tone": "informal"})
     return signals[:5]
-    seen_q: set[str] = set()
-    for chat in chats:
-        q = chat["content"][:100]
-        key = q[:40].lower()
-        if key not in seen_q and len(q) > 10:
-            seen_q.add(key)
-            sources = keyword_search(project_id, chat["content"], "Coordinator", limit=1)
-            answer = sources[0].snippet[:200] if sources else "Lihat knowledge base untuk detail lebih lanjut."
-            faqs.append({"q": q, "a": answer})
-    # If no faqs from chat, generate some from docs
-    if not faqs and docs:
-        for doc in docs[:3]:
-            doc_type = row_get(doc, "doc_type") or "file"
-            q = f"Apa ringkasan dari dokumen {doc['filename']}?"
-            a = row_get(doc, "ai_summary") or doc["text"][:200]
-            faqs.append({"q": q, "a": a})
-            
-    if not faqs:
-        faqs.append({"q": "Belum ada pertanyaan terkait project ini?", "a": "Tim belum mengajukan pertanyaan ke AI Coordinator. Mulai diskusi di tab Chat untuk otomatis menghasilkan FAQ di sini berdasarkan histori koordinasi project."})
-        
-    return faqs[:5]
 
 
 def inject_css() -> None:
@@ -2933,13 +2912,57 @@ def generate_ai_project_overview(project: sqlite3.Row) -> str:
     return f"Project **{project['name']}** (Release: `{project['release_id'] or 'TBD'}`, Change: `{project['change_id'] or 'TBD'}`) bertujuan mengkoordinasikan ekosistem lintas biro BCA (BA, UAT, dan IT). {overview_text[:320]}..."
 
 
+def generate_action_items(project_id: str) -> list[dict[str, str]]:
+    """Generate concrete operational action items with target dates from project state and timeline."""
+    docs = project_docs(project_id)
+    approved_docs = [d for d in docs if d["approval_status"] == "Approved"]
+    pending_docs = [d for d in docs if d["approval_status"] == "Pending"]
+    defects = open_defect_count(project_id)
+    base_date = datetime.now().date()
+    
+    items = []
+    
+    # 1. Action Item UAT Environment & Execution
+    uat_date = (base_date + timedelta(days=10)).strftime("%d %b %Y")
+    items.append({
+        "severity": "High" if defects > 0 else "Medium",
+        "title": "Make sure env regresi UAT aman & siap",
+        "body": f"Pastikan environment regresi UAT aman, bebas defect blocker, dan skenario uji siap sebelum kick-off UAT tgl {uat_date}.",
+        "owner": "UAT Lead",
+        "date": uat_date
+    })
+    
+    # 2. Action Item Approval Dokumen Pending
+    if pending_docs:
+        items.append({
+            "severity": "High",
+            "title": f"Review & approve {len(pending_docs)} dokumen pending oleh PO",
+            "body": "Dokumen pending perlu di-approve Product Owner (PO) agar Agentic AI dapat menggunakannya sebagai konteks resmi.",
+            "owner": "PO",
+            "date": (base_date + timedelta(days=2)).strftime("%d %b %Y")
+        })
+        
+    # 3. Action Item IT Spec & Runbook Deployment
+    it_date = (base_date + timedelta(days=12)).strftime("%d %b %Y")
+    has_runbook = any("runbook" in (d["text"] or "").lower() for d in approved_docs)
+    items.append({
+        "severity": "Medium" if not has_runbook else "Low",
+        "title": "Finalisasi API Spec & Runbook Deployment IT",
+        "body": f"Pastikan dokumen spesifikasi teknis IT, skema API Gateway, dan runbook deployment sudah terverifikasi sebelum tgl {it_date}.",
+        "owner": "IT Lead",
+        "date": it_date
+    })
+    
+    return items
+
+
 def render_dashboard(project: sqlite3.Row) -> None:
     project_id = project["id"]
     all_docs   = project_docs(project_id)
     approved_docs = project_docs(project_id, approved_only=True)
     pending_docs  = [d for d in all_docs if d["approval_status"] == "Pending"]
     members    = project_members(project_id)
-    blockers   = blocker_signals(project_id)
+    action_items = generate_action_items(project_id)
     
     total_chats = db_rows("select count(*) as cnt from chats where project_id = ?", (project_id,))
     chat_count  = total_chats[0]["cnt"] if total_chats else 0
@@ -2950,7 +2973,7 @@ def render_dashboard(project: sqlite3.Row) -> None:
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px;">
             <div>
                 <h3 style="margin:0; font-size:1.35rem; font-weight:800; color:var(--ink);">📊 Project Coordination Dashboard</h3>
-                <div style="font-size:0.82rem; color:var(--muted);">Visualisasi real-time berbasis knowledge base lintas biro (BA • IT • UAT)</div>
+                <div style="font-size:0.82rem; color:var(--muted);">Visualisasi real-time berbasis knowledge base</div>
             </div>
         </div>
         """,
@@ -2974,16 +2997,14 @@ def render_dashboard(project: sqlite3.Row) -> None:
         kpi_1_val = f"{len(approved_docs)} / {len(all_docs)}"
         kpi_1_sub = f"{len(pending_docs)} Pending PO"
         
-        kpi_2_val = f"{len(blockers)} Sinyal"
-        kpi_2_color = "#E55353" if blockers else "#20A77B"
+        kpi_2_val = f"{len(action_items)} Tasks"
+        kpi_2_color = "#F5A623" if len(action_items) > 0 else "#20A77B"
         
         kpi_3_val = f"{len(members)} Member"
         roles_present = ", ".join({m["role"] for m in members}) if members else "Belum ada"
 
         kpi_4_val = f"{defects_count} Defect" if defects_count > 0 else "Nihil Defect"
         kpi_4_color = "#E55353" if defects_count > 0 else "#20A77B"
-
-        highlight_note = "Executive Overview: Monitoring ritme & kesiapan lintas biro BCA."
 
         st.markdown(
             f"""
@@ -2998,9 +3019,9 @@ def render_dashboard(project: sqlite3.Row) -> None:
                         <div style="font-size:0.7rem; color:#F5A623; font-weight:700;">{kpi_1_sub}</div>
                     </div>
                     <div style="background:var(--card-alt); padding:10px 12px; border-radius:10px; border:1px solid var(--line);">
-                        <div style="font-size:0.72rem; color:var(--muted); font-weight:600;">🚧 Action Items / Risk</div>
+                        <div style="font-size:0.72rem; color:var(--muted); font-weight:600;">⚡ Action Items</div>
                         <div style="font-size:1.15rem; font-weight:800; color:{kpi_2_color};">{kpi_2_val}</div>
-                        <div style="font-size:0.7rem; color:var(--muted); font-weight:600;">Terdeteksi AI</div>
+                        <div style="font-size:0.7rem; color:var(--muted); font-weight:600;">Target Operasional</div>
                     </div>
                     <div style="background:var(--card-alt); padding:10px 12px; border-radius:10px; border:1px solid var(--line);">
                         <div style="font-size:0.72rem; color:var(--muted); font-weight:600;">👥 Tim Lintas Biro</div>
@@ -3012,9 +3033,6 @@ def render_dashboard(project: sqlite3.Row) -> None:
                         <div style="font-size:1.15rem; font-weight:800; color:{kpi_4_color};">{kpi_4_val}</div>
                         <div style="font-size:0.7rem; color:var(--muted);">UAT Evidence</div>
                     </div>
-                </div>
-                <div style="margin-top:12px; font-size:0.76rem; padding:6px 10px; background:var(--soft-blue); border-radius:8px; color:var(--brand); font-weight:600;">
-                    💡 {highlight_note}
                 </div>
             </div>
             """,
@@ -3180,33 +3198,35 @@ def render_dashboard(project: sqlite3.Row) -> None:
         st.markdown(
             """
             <div style="font-size:0.85rem; font-weight:800; color:var(--ink); margin-bottom:8px; display:flex; align-items:center; gap:6px;">
-                <span>⚡ Action Items & Rekomendasi Visual</span>
+                <span>⚡ Action Items Operasional</span>
             </div>
             """,
             unsafe_allow_html=True
         )
-        if blockers:
+        if action_items:
             html_act = '<div class="pm-shell" style="padding:10px 14px; max-height:260px; overflow-y:auto;">'
-            for sig in blockers:
-                sev   = sig["severity"]
+            for item in action_items:
+                sev   = item["severity"]
                 sev_c = {"High": "#E55353", "Medium": "#F5A623", "Low": "#00A6D6"}.get(sev, "#00A6D6")
-                owner = ("PO" if "approval" in sig["title"].lower()
-                         else "IT + UAT" if "defect" in sig["title"].lower()
-                         else "IT Lead")
+                owner = item["owner"]
+                date_target = item["date"]
                 html_act += (
-                    f'<div style="padding:8px; margin-bottom:8px; border-radius:8px; background:var(--card-alt); border-left:4px solid {sev_c};">'
+                    f'<div style="padding:10px; margin-bottom:8px; border-radius:8px; background:var(--card-alt); border-left:4px solid {sev_c};">'
                     f'<div style="display:flex; justify-content:space-between; align-items:center;">'
-                    f'<strong style="font-size:0.82rem; color:var(--ink);">{esc(sig["title"])}</strong>'
+                    f'<strong style="font-size:0.82rem; color:var(--ink);">{esc(item["title"])}</strong>'
                     f'<span style="font-size:0.68rem; font-weight:800; padding:1px 6px; border-radius:4px; background:{sev_c}20; color:{sev_c};">{sev}</span>'
                     f'</div>'
-                    f'<div style="font-size:0.76rem; color:var(--muted); margin-top:4px;">{esc(sig["body"][:90])}</div>'
-                    f'<div style="font-size:0.7rem; color:var(--brand); font-weight:700; margin-top:4px; text-align:right;">PIC: {owner}</div>'
+                    f'<div style="font-size:0.76rem; color:var(--muted); margin-top:4px; line-height:1.4;">{esc(item["body"])}</div>'
+                    f'<div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; font-size:0.7rem;">'
+                    f'<span style="color:var(--brand); font-weight:700;">📅 Target: {date_target}</span>'
+                    f'<span style="color:var(--muted); font-weight:700;">PIC: {owner}</span>'
+                    f'</div>'
                     f'</div>'
                 )
             html_act += '</div>'
             st.markdown(html_act, unsafe_allow_html=True)
         else:
-            st.success("✅ Tidak ada sinyal blocker aktif. Seluruh dokumen & scope project dalam kondisi siap.")
+            st.success("✅ Seluruh action items operasional telah terpenuhi.")
 
 
 def main() -> None:
