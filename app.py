@@ -1580,6 +1580,35 @@ def inject_css() -> None:
             margin-top: 2px;
         }}
 
+        /* ─── Empty states ─── */
+        .pm-empty {{
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            gap: 6px;
+            background: var(--card);
+            border: 1px dashed var(--line);
+            border-radius: 14px;
+            padding: 28px 20px;
+        }}
+        .pm-empty-icon {{
+            font-size: 2rem;
+            opacity: .8;
+        }}
+        .pm-empty-title {{
+            font-size: .95rem;
+            font-weight: 800;
+            color: var(--ink);
+        }}
+        .pm-empty-body {{
+            font-size: .82rem;
+            color: var(--muted);
+            line-height: 1.5;
+            max-width: 320px;
+        }}
+
         /* ─── FAQ ─── */
         .pm-faq-item {{
             border: 1px solid var(--line);
@@ -1602,7 +1631,7 @@ def inject_css() -> None:
             line-height: 1.5;
         }}
 
-        /* ─── Members Table ─── */
+        /* ─── Members Table (legacy row) ─── */
         .pm-member-row {{
             display: grid;
             grid-template-columns: 120px 1fr 100px 120px;
@@ -1619,6 +1648,122 @@ def inject_css() -> None:
         }}
         .pm-member-nip {{ font-family: monospace; font-size: .85rem; color: var(--muted); }}
         .pm-member-name {{ font-weight: 700; color: var(--ink); }}
+
+        /* ─── Members Cards ─── */
+        .pm-member-card {{
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
+            transition: box-shadow .2s, transform .2s, border-color .2s;
+        }}
+        .pm-member-card:hover {{
+            box-shadow: 0 8px 28px rgba(15,32,52,.08);
+            transform: translateY(-1px);
+            border-color: rgba(0,63,136,.25);
+        }}
+        .pm-avatar {{
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            display: grid;
+            place-items: center;
+            font-size: 1rem;
+            font-weight: 900;
+            color: #fff;
+            flex-shrink: 0;
+            box-shadow: 0 4px 12px rgba(0,0,0,.10);
+        }}
+        .pm-member-main {{
+            flex: 1;
+            min-width: 0;
+        }}
+        .pm-member-name-line {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }}
+        .pm-member-name-line .name {{
+            font-weight: 800;
+            font-size: .95rem;
+            color: var(--ink);
+        }}
+        .pm-member-creator-badge {{
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: .68rem;
+            font-weight: 800;
+            color: var(--brand);
+            background: var(--soft-blue);
+            border: 1px solid rgba(0,63,136,.18);
+            padding: 1px 8px;
+            border-radius: 999px;
+        }}
+        .pm-member-sub {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 3px;
+            font-size: .78rem;
+            color: var(--muted);
+        }}
+        .pm-member-nip-code {{
+            font-family: var(--font-mono);
+            font-size: .76rem;
+            color: var(--muted);
+            background: var(--card-alt);
+            padding: 1px 7px;
+            border-radius: 6px;
+        }}
+        .pm-member-unit {{
+            color: var(--muted);
+        }}
+        .pm-role-badge {{
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: .74rem;
+            font-weight: 800;
+            padding: 2px 10px;
+            border-radius: 999px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }}
+        .pm-member-role-dist {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 16px;
+        }}
+        .pm-dist-chip {{
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            padding: 4px 12px;
+            font-size: .78rem;
+            font-weight: 700;
+            color: var(--ink);
+        }}
+        .pm-dist-chip .dot {{
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }}
+        .pm-dist-chip .cnt {{
+            color: var(--muted);
+            font-weight: 600;
+        }}
 
         /* ─── Dashboard Sections ─── */
         .pm-section-header {{
@@ -2156,6 +2301,24 @@ def inject_css() -> None:
                 grid-template-columns: 1fr;
             }}
 
+            .pm-member-card {{
+                gap: 10px;
+                padding: 12px;
+            }}
+            .pm-avatar {{
+                width: 38px;
+                height: 38px;
+                font-size: .9rem;
+                border-radius: 10px;
+            }}
+            .pm-member-role-dist {{
+                gap: 5px;
+            }}
+            .pm-dist-chip {{
+                padding: 3px 10px;
+                font-size: .74rem;
+            }}
+
             .pm-progress-line {{
                 grid-template-columns: 1fr 48px;
                 grid-template-rows: auto auto;
@@ -2259,6 +2422,15 @@ def inject_css() -> None:
             }}
             .pm-member-nip, .pm-member-name {{
                 grid-column: 1 / 2;
+            }}
+            .pm-member-card {{
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }}
+            .pm-avatar {{
+                width: 40px;
+                height: 40px;
             }}
         }}
         </style>
@@ -2576,52 +2748,99 @@ def render_sidebar() -> sqlite3.Row | None:
 
 
 def render_members(project_id: str) -> None:
-    left, right = st.columns([1.3, 1], gap="large")
+    members = project_members(project_id)
+    creator = project_creator(project_id)
+    is_creator = can_approve_sources(project_id)
+    role_colors = {"IT": "#0078d4", "UAT": "#20A77B", "BA": "#F5A623", "PO": "#8b5cf6"}
+
+    def initials(name: str) -> str:
+        parts = [p for p in re.split(r"[\s._-]+", name.strip()) if p]
+        if len(parts) >= 2:
+            return (parts[0][0] + parts[-1][0]).upper()
+        return (parts[0][:2] if parts else "?").upper()
+
+    # ── Team summary strip ──────────────────────────────────────────────────────
+    role_dist = {}
+    for m in members:
+        role_dist[m["role"]] = role_dist.get(m["role"], 0) + 1
+
+    dist_chips = []
+    for role in ROLES:
+        cnt = role_dist.get(role, 0)
+        rc = role_colors.get(role, "#6b7280")
+        dist_chips.append(
+            f'<span class="pm-dist-chip"><span class="dot" style="background:{rc};"></span>{role} <span class="cnt">({cnt})</span></span>'
+        )
+    if not members:
+        dist_chips = ['<span class="pm-dist-chip" style="color: var(--muted);">Belum ada member</span>']
+
+    st.markdown(
+        f"""
+        <div class="pm-member-role-dist">
+            {''.join(dist_chips)}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    left, right = st.columns([1.35, 1], gap="large")
+
+    # ── Left: team member cards ─────────────────────────────────────────────────
     with left:
         st.markdown(
             """
             <div class="pm-section-header">
                 <div class="pm-section-icon">👥</div>
-                <div class="pm-section-heading">Project Members</div>
+                <div class="pm-section-heading">Team Members</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
-        members = project_members(project_id)
+
         if members:
-            # Header row
-            st.markdown(
-                """
-                <div class="pm-member-row">
-                    <div class="pm-member-header">NIP</div>
-                    <div class="pm-member-header">Nama Lengkap</div>
-                    <div class="pm-member-header">Role</div>
-                    <div class="pm-member-header">Unit / Biro</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            role_colors = {"IT": "#0078d4", "UAT": "#20A77B", "BA": "#F5A623", "PO": "#8b5cf6"}
             for m in members:
                 nip = m["nip"] or "-"
                 nama = m["nama"] or m["username"]
-                unit = m["unit"] or "-"
+                unit = m["unit"] or "—"
                 role = m["role"]
                 rc = role_colors.get(role, "#6b7280")
+                av = initials(nama)
+                creator_badge = f'<span class="pm-member-creator-badge">👑 Creator</span>' if m["username"] == creator else ""
                 st.markdown(
                     f"""
-                    <div class="pm-member-row">
-                        <div class="pm-member-nip">{esc(nip)}</div>
-                        <div class="pm-member-name">{esc(nama)}</div>
-                        <div><span style="background:{rc}18; color:{rc}; font-size:.74rem; font-weight:700; padding:2px 8px; border-radius:999px;">{esc(role)}</span></div>
-                        <div style="font-size:.83rem; color: var(--muted);">{esc(unit)}</div>
+                    <div class="pm-member-card">
+                        <div class="pm-avatar" style="background: linear-gradient(135deg, {rc}, {rc}cc);">{esc(av)}</div>
+                        <div class="pm-member-main">
+                            <div class="pm-member-name-line">
+                                <span class="name">{esc(nama)}</span>
+                                {creator_badge}
+                            </div>
+                            <div class="pm-member-sub">
+                                <span class="pm-member-nip-code">{esc(nip)}</span>
+                                <span class="pm-member-unit">🏢 {esc(unit)}</span>
+                                <span class="pm-member-unit">👤 {esc(m["username"])}</span>
+                            </div>
+                        </div>
+                        <span class="pm-role-badge" style="background:{rc}18; color:{rc};">{esc(role)}</span>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
         else:
-            st.info("Belum ada member di workspace ini. Tambahkan member pertama!")
+            st.markdown(
+                """
+                <div class="pm-context-card">
+                    <div class="pm-context-label">Belum ada member</div>
+                    <div style="color: var(--muted); font-size: .84rem; line-height: 1.6;">
+                        Tambahkan member pertama untuk mulai berkolaborasi lintas biro.
+                        Member dapat berinteraksi dengan AI Coordinator sesuai domainnya.
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
+    # ── Right: add member ───────────────────────────────────────────────────────
     with right:
         st.markdown(
             """
@@ -2633,16 +2852,17 @@ def render_members(project_id: str) -> None:
             unsafe_allow_html=True,
         )
         st.markdown(
-            f'<div class="pm-governance">Creator workspace ({esc(project_creator(project_id))}) dapat mengundang member baru dan meng-approve knowledge. Member mendapat akses sesuai role yang diberikan.</div>',
+            f'<div class="pm-governance">Creator workspace (<strong style="color:var(--brand);">{esc(creator)}</strong>) dapat mengundang member baru. NIP di-resolve otomatis menjadi nama & username anggota BCA.</div>',
             unsafe_allow_html=True,
         )
-        if can_approve_sources(project_id):
+
+        if is_creator:
             with st.form("add_member", clear_on_submit=True):
-                nip = st.text_input("NIP ✱", placeholder="Contoh: 12345678")
+                nip = st.text_input("NIP ✱", placeholder="Contoh: 12345678", help="NIP karyawan akan di-resolve ke nama & username BCA.")
                 col_role, col_unit = st.columns(2)
                 role = col_role.selectbox("Role", ROLES)
                 unit = col_unit.selectbox("Unit / Biro", UNITS)
-                submitted = st.form_submit_button("Tambah Member", use_container_width=True, type="primary")
+                submitted = st.form_submit_button("👤 Tambah Member", use_container_width=True, type="primary")
             if submitted:
                 nip_clean = nip.strip()
                 if not nip_clean:
@@ -2653,7 +2873,18 @@ def render_members(project_id: str) -> None:
                     st.success(f"✅ Member berhasil ditambahkan: {nama} ({role} - {unit})")
                     st.rerun()
         else:
-            st.info("Hanya creator workspace yang bisa menambah member.")
+            st.markdown(
+                """
+                <div class="pm-context-card">
+                    <div class="pm-context-label">🔒 Akses terbatas</div>
+                    <div style="color: var(--muted); font-size: .84rem; line-height: 1.6;">
+                        Hanya creator workspace yang bisa menambah member. Silakan hubungi creator untuk mengundang anggota tim baru.
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
 
 
 def render_knowledge(project_id: str) -> None:
@@ -2805,7 +3036,16 @@ def render_knowledge(project_id: str) -> None:
         )
 
         if not all_docs:
-            st.info("Belum ada knowledge di workspace ini. Upload dokumen, tambah catatan, atau masukkan link.")
+            st.markdown(
+                """
+                <div class="pm-empty">
+                    <div class="pm-empty-icon">📚</div>
+                    <div class="pm-empty-title">Knowledge Library masih kosong</div>
+                    <div class="pm-empty-body">Upload dokumen, tambah catatan, atau masukkan link penting untuk membangun knowledge base project. Dokumen yang di-upload otomatis di-extract & di-summarize.</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
         else:
             status_filter = st.radio(
                 "Filter status",
@@ -2816,7 +3056,16 @@ def render_knowledge(project_id: str) -> None:
             )
             shown = all_docs if status_filter == "Semua" else [d for d in all_docs if d["approval_status"] == status_filter]
             if not shown:
-                st.info(f"Tidak ada dokumen dengan status {status_filter}.")
+                st.markdown(
+                    f"""
+                    <div class="pm-empty">
+                        <div class="pm-empty-icon">🔍</div>
+                        <div class="pm-empty-title">Tidak ada dokumen {status_filter}</div>
+                        <div class="pm-empty-body">Tidak ditemukan knowledge dengan status {status_filter}. Coba filter lain.</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
             else:
                 cards = []
                 for d in shown:
@@ -2867,13 +3116,13 @@ def render_knowledge(project_id: str) -> None:
                     <div class="pm-approve-card">
                         <div class="pm-approve-info">
                             <div class="pm-approve-title">{esc(d["filename"])}</div>
-                            <div class="pm-approve-sub">{esc((row_get(d, "ai_summary") or d["text"])[:100])}</div>
+                            <div class="pm-approve-sub">by {esc(d["uploaded_by"] or "unknown")} · {(d["created_at"] or "")[:10]} · {esc((row_get(d, "ai_summary") or d["text"])[:80])}</div>
                         </div>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
-                if st.button("✅ Approve", key=f"approve_{d['id']}", use_container_width=True):
+                if st.button("✅ Approve", key=f"approve_{d['id']}", use_container_width=True, type="primary"):
                     approve_document(d["id"], st.session_state.get("username", "unknown"))
                     st.success(f"✅ **{d['filename']}** di-approve dan aktif untuk agent.")
                     st.rerun()
@@ -2885,7 +3134,7 @@ def render_knowledge(project_id: str) -> None:
         if all_docs:
             st.markdown('<div class="pm-section-title" style="margin-top: 4px;">🛠️ Kelola Dokumen</div>', unsafe_allow_html=True)
             edit_options = [f"{d['filename']}  ·  {d['approval_status']}" for d in all_docs]
-            edit_idx = st.selectbox("Pilih dokumen", range(len(all_docs)), format_func=lambda i: edit_options[i], label_visibility="collapsed")
+            edit_idx = st.selectbox("📄 Pilih dokumen", range(len(all_docs)), format_func=lambda i: edit_options[i])
             sel_doc = all_docs[edit_idx]
             with st.form(f"edit_doc_{sel_doc['id']}"):
                 new_label = st.selectbox(
@@ -2922,17 +3171,30 @@ def render_knowledge(project_id: str) -> None:
                 ai_sum = row_get(doc, "ai_summary") or ""
                 doc_type = row_get(doc, "doc_type") or "file"
                 type_icon = {"file": "📄", "note": "📝", "link": "🔗"}.get(doc_type, "📄")
+                type_lbl = {"file": "Dokumen", "note": "Catatan", "link": "Link"}.get(doc_type, doc_type.capitalize())
                 st.markdown(
                     f"""
                     <div class="pm-source">
                         <div class="pm-source-title">{type_icon} {esc(doc["filename"])}</div>
-                        <div class="pm-source-body">{esc(ai_sum[:160]) if ai_sum else esc(doc["text"][:160])}</div>
+                        <div class="pm-source-body">
+                            <span class="pm-pill {doc["source_label"].lower()}">{esc(doc["source_label"])}</span>
+                            {esc(ai_sum[:150]) if ai_sum else esc(doc["text"][:150])}
+                        </div>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
         else:
-            st.info("Belum ada knowledge aktif. Approve dokumen pending atau upload yang baru.")
+            st.markdown(
+                """
+                <div class="pm-empty">
+                    <div class="pm-empty-icon">⏳</div>
+                    <div class="pm-empty-title">Belum ada knowledge aktif</div>
+                    <div class="pm-empty-body">Approve dokumen pending atau upload yang baru agar agent bisa memakainya sebagai konteks.</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
 
 
