@@ -2904,12 +2904,16 @@ def extract_project_timeline(project_id: str) -> list[dict[str, object]]:
 def generate_ai_project_overview(project: sqlite3.Row) -> str:
     """Generate executive summary of the project based on approved knowledge base docs."""
     docs = project_docs(project["id"], approved_only=True)
+    proj_name = esc(project['name'])
+    rel_id = esc(project['release_id'] or 'TBD')
+    chg_id = esc(project['change_id'] or 'TBD')
+
     if not docs:
-        return f"Project **{project['name']}** saat ini belum memiliki dokumen resmi yang di-approve oleh PO. Unggah BRD atau dokumen teknis di tab **Knowledge** untuk mengaktifkan ringkasan otomatis oleh Agentic AI."
+        return f"Project <b>{proj_name}</b> (Release: <code>{rel_id}</code>) saat ini belum memiliki dokumen resmi yang di-approve oleh PO. Unggah BRD atau dokumen teknis di tab <b>Knowledge</b> untuk mengaktifkan ringkasan otomatis berbasis Agentic AI."
     
-    summaries = [row_get(d, "ai_summary") or d["text"][:150] for d in docs if row_get(d, "ai_summary") or d["text"]]
-    overview_text = " ".join(summaries[:3]) if summaries else "Dokumen project sudah diunggah dan sedang di-index oleh Agent IT & UAT."
-    return f"Project **{project['name']}** (Release: `{project['release_id'] or 'TBD'}`, Change: `{project['change_id'] or 'TBD'}`) bertujuan mengkoordinasikan ekosistem lintas biro BCA (BA, UAT, dan IT). {overview_text[:320]}..."
+    summaries = [row_get(d, "ai_summary") or d["text"][:160] for d in docs if row_get(d, "ai_summary") or d["text"]]
+    overview_text = " ".join(summaries[:3]) if summaries else "Dokumen project telah diunggah dan di-index oleh Agent IT & UAT untuk mendukung koordinasi otomatis."
+    return f"Project <b>{proj_name}</b> (Release Target: <code>{rel_id}</code>, Change ID: <code>{chg_id}</code>) berfokus pada efisiensi koordinasi lintas biro BCA (BA, UAT, dan IT). {esc(overview_text[:350])}..."
 
 
 def generate_action_items(project_id: str) -> list[dict[str, str]]:
@@ -2982,92 +2986,65 @@ def render_dashboard(project: sqlite3.Row) -> None:
 
     st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
 
-    # ── General Knowledge & Critical Metrics (F-Scan Layout) ────────────────────
+    # ── General Knowledge Summary Header Banner (Full-Width) ────────────────────
     st.markdown(
         """<div class="pm-section-header">
              <div class="pm-section-icon">📌</div>
-             <div class="pm-section-heading">General Knowledge & Critical Metrics</div>
+             <div class="pm-section-heading">General Knowledge Project Summary</div>
            </div>""",
         unsafe_allow_html=True,
     )
 
-    col_kpi, col_overview = st.columns([1.2, 1.8], gap="large")
+    ai_overview = generate_ai_project_overview(project)
+    rel_id_str = esc(project['release_id'] or 'TBD')
+    chg_id_str = esc(project['change_id'] or 'TBD')
+    doc_count_str = f"{len(approved_docs)} / {len(all_docs)} Docs"
+    member_count_str = f"{len(members)} Member"
 
-    with col_kpi:
-        kpi_1_val = f"{len(approved_docs)} / {len(all_docs)}"
-        kpi_1_sub = f"{len(pending_docs)} Pending PO"
-        
-        kpi_2_val = f"{len(action_items)} Tasks"
-        kpi_2_color = "#F5A623" if len(action_items) > 0 else "#20A77B"
-        
-        kpi_3_val = f"{len(members)} Member"
-        roles_present = ", ".join({m["role"] for m in members}) if members else "Belum ada"
-
-        kpi_4_val = f"{defects_count} Defect" if defects_count > 0 else "Nihil Defect"
-        kpi_4_color = "#E55353" if defects_count > 0 else "#20A77B"
-
-        st.markdown(
-            f"""
-            <div class="pm-shell" style="padding:16px 20px; height:100%; display:flex; flex-direction:column; justify-content:space-between;">
-                <div style="font-size:0.75rem; font-weight:800; text-transform:uppercase; color:var(--brand); letter-spacing:.05em;">
-                    ⚡ Critical Actionable Metrics
+    st.markdown(
+        f"""
+        <div class="pm-shell" style="padding:20px 24px; margin-bottom:20px; background:linear-gradient(135deg, rgba(0,63,136,.06), rgba(0,166,214,.04)), var(--card);">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
+                <div style="font-size:0.78rem; font-weight:800; text-transform:uppercase; color:var(--brand); letter-spacing:.06em; display:flex; align-items:center; gap:6px;">
+                    <span>🧠 AI-Generated Knowledge Overview</span>
                 </div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px;">
-                    <div style="background:var(--card-alt); padding:10px 12px; border-radius:10px; border:1px solid var(--line);">
-                        <div style="font-size:0.72rem; color:var(--muted); font-weight:600;">📚 Approved Knowledge</div>
-                        <div style="font-size:1.15rem; font-weight:800; color:var(--ink);">{kpi_1_val}</div>
-                        <div style="font-size:0.7rem; color:#F5A623; font-weight:700;">{kpi_1_sub}</div>
-                    </div>
-                    <div style="background:var(--card-alt); padding:10px 12px; border-radius:10px; border:1px solid var(--line);">
-                        <div style="font-size:0.72rem; color:var(--muted); font-weight:600;">⚡ Action Items</div>
-                        <div style="font-size:1.15rem; font-weight:800; color:{kpi_2_color};">{kpi_2_val}</div>
-                        <div style="font-size:0.7rem; color:var(--muted); font-weight:600;">Target Operasional</div>
-                    </div>
-                    <div style="background:var(--card-alt); padding:10px 12px; border-radius:10px; border:1px solid var(--line);">
-                        <div style="font-size:0.72rem; color:var(--muted); font-weight:600;">👥 Tim Lintas Biro</div>
-                        <div style="font-size:1.15rem; font-weight:800; color:var(--ink);">{kpi_3_val}</div>
-                        <div style="font-size:0.7rem; color:var(--muted); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">{roles_present}</div>
-                    </div>
-                    <div style="background:var(--card-alt); padding:10px 12px; border-radius:10px; border:1px solid var(--line);">
-                        <div style="font-size:0.72rem; color:var(--muted); font-weight:600;">🧪 Status Defect UAT</div>
-                        <div style="font-size:1.15rem; font-weight:800; color:{kpi_4_color};">{kpi_4_val}</div>
-                        <div style="font-size:0.7rem; color:var(--muted);">UAT Evidence</div>
-                    </div>
+                <span style="font-size:0.72rem; background:linear-gradient(135deg,#003F88,#00A6D6); color:white; padding:3px 10px; border-radius:12px; font-weight:700;">
+                    Auto Synthesized
+                </span>
+            </div>
+            <div style="font-size:0.95rem; color:var(--ink); line-height:1.65; margin-bottom:16px;">
+                {ai_overview}
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px; border-top:1px solid var(--line); padding-top:14px;">
+                <div style="background:var(--card-alt); padding:8px 12px; border-radius:8px; border:1px solid var(--line);">
+                    <div style="font-size:0.7rem; color:var(--muted); font-weight:600;">📋 Release Target</div>
+                    <div style="font-size:0.92rem; font-weight:800; color:var(--ink);">{rel_id_str}</div>
+                </div>
+                <div style="background:var(--card-alt); padding:8px 12px; border-radius:8px; border:1px solid var(--line);">
+                    <div style="font-size:0.7rem; color:var(--muted); font-weight:600;">🔄 Change ID</div>
+                    <div style="font-size:0.92rem; font-weight:800; color:var(--ink);">{chg_id_str}</div>
+                </div>
+                <div style="background:var(--card-alt); padding:8px 12px; border-radius:8px; border:1px solid var(--line);">
+                    <div style="font-size:0.7rem; color:var(--muted); font-weight:600;">📚 Approved Knowledge</div>
+                    <div style="font-size:0.92rem; font-weight:800; color:#20A77B;">{doc_count_str}</div>
+                </div>
+                <div style="background:var(--card-alt); padding:8px 12px; border-radius:8px; border:1px solid var(--line);">
+                    <div style="font-size:0.7rem; color:var(--muted); font-weight:600;">👥 Tim Lintas Biro</div>
+                    <div style="font-size:0.92rem; font-weight:800; color:var(--ink);">{member_count_str}</div>
+                </div>
+                <div style="background:var(--card-alt); padding:8px 12px; border-radius:8px; border:1px solid var(--line);">
+                    <div style="font-size:0.7rem; color:var(--muted); font-weight:600;">💬 Interaksi AI</div>
+                    <div style="font-size:0.92rem; font-weight:800; color:#00A6D6;">{chat_count} Pesan</div>
                 </div>
             </div>
-            """,
-            unsafe_allow_html=True
-        )
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-    with col_overview:
-        ai_overview = generate_ai_project_overview(project)
-        st.markdown(
-            f"""
-            <div class="pm-shell" style="padding:18px 22px; height:100%;">
-                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
-                    <div style="font-size:0.75rem; font-weight:800; text-transform:uppercase; color:var(--brand); letter-spacing:.05em;">
-                        🧠 AI-Generated General Knowledge Project Summary
-                    </div>
-                    <span style="font-size:0.72rem; background:linear-gradient(135deg,#003F88,#00A6D6); color:white; padding:2px 8px; border-radius:12px; font-weight:700;">
-                        Auto Synthesized
-                    </span>
-                </div>
-                <div style="font-size:0.92rem; color:var(--ink); line-height:1.6; margin-bottom:12px;">
-                    {ai_overview}
-                </div>
-                <div style="display:flex; gap:16px; font-size:0.78rem; color:var(--muted); border-top:1px solid var(--line); padding-top:10px;">
-                    <div>📋 <b>Release Target:</b> {esc(project['release_id'] or 'Belum diisi')}</div>
-                    <div>🔄 <b>Change ID:</b> {esc(project['change_id'] or 'Belum diisi')}</div>
-                    <div>💬 <b>Interaksi AI:</b> {chat_count} Pertanyaan</div>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
 
-    st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
-
-    # ── Visual Timeline (Generated by Knowledgebase & Target HK) ────────────────
+    # ── Visual Timeline & Target HK ──────────────────────────────────────────────
     st.markdown(
         """<div class="pm-section-header">
              <div class="pm-section-icon">📅</div>
@@ -3082,6 +3059,7 @@ def render_dashboard(project: sqlite3.Row) -> None:
     col_chart, col_phase_details = st.columns([2, 1], gap="large")
 
     with col_chart:
+        # Palette matching ProjectMind (#003F88, #00A6D6, #20A77B, #F5A623)
         chart_timeline = (
             alt.Chart(df_timeline)
             .mark_bar(cornerRadius=6, height=24)
@@ -3095,7 +3073,7 @@ def render_dashboard(project: sqlite3.Row) -> None:
                         domain=["BA", "IT", "UAT", "Lintas Biro"],
                         range=["#003F88", "#00A6D6", "#20A77B", "#F5A623"]
                     ),
-                    legend=alt.Legend(orient="top", title="Biro Responsible")
+                    legend=alt.Legend(orient="top", title="Biro Penanggung Jawab")
                 ),
                 tooltip=[
                     alt.Tooltip("Fase:N", title="Fase Project"),
@@ -3111,8 +3089,8 @@ def render_dashboard(project: sqlite3.Row) -> None:
         st.altair_chart(chart_timeline, use_container_width=True)
 
     with col_phase_details:
-        html_phases = '<div class="pm-shell" style="padding:12px 16px;">'
-        html_phases += '<div style="font-size:0.75rem; font-weight:800; text-transform:uppercase; color:var(--brand); margin-bottom:8px;">🎯 Target HK & Milestone</div>'
+        html_phases = '<div class="pm-shell" style="padding:14px 18px;">'
+        html_phases += '<div style="font-size:0.75rem; font-weight:800; text-transform:uppercase; color:var(--brand); margin-bottom:10px;">🎯 Target HK & Milestone</div>'
         for phase in phases:
             status_bg = "#20A77B" if phase["Status"] == "Selesai" else ("#00A6D6" if "Proses" in str(phase["Status"]) else "#F5A623")
             html_phases += (
@@ -3121,7 +3099,7 @@ def render_dashboard(project: sqlite3.Row) -> None:
                 f'<div style="font-size:0.83rem; font-weight:700; color:var(--ink);">{phase["Fase"]}</div>'
                 f'<div style="font-size:0.74rem; color:var(--muted);">Biro {phase["Biro"]} • Target {phase["HK"]}</div>'
                 f'</div>'
-                f'<span style="font-size:0.7rem; font-weight:800; padding:2px 8px; border-radius:12px; background:{status_bg}20; color:{status_bg}; white-space:nowrap;">'
+                f'<span style="font-size:0.7rem; font-weight:800; padding:3px 10px; border-radius:12px; background:{status_bg}18; color:{status_bg}; border:1px solid {status_bg}40; white-space:nowrap;">'
                 f'{phase["Status"]}'
                 f'</span>'
                 f'</div>'
@@ -3140,8 +3118,9 @@ def render_dashboard(project: sqlite3.Row) -> None:
         unsafe_allow_html=True,
     )
 
-    col_status, col_faq, col_actions = st.columns([1, 1, 1], gap="large")
+    col_status, col_faq, col_actions = st.columns([1.1, 0.95, 0.95], gap="large")
 
+    # Panel 3.1: Status Project Realtime Konkret & Naratif
     with col_status:
         st.markdown(
             """
@@ -3155,25 +3134,31 @@ def render_dashboard(project: sqlite3.Row) -> None:
         has_it_scope  = any(d["agent_scope"] in {"IT", "All"} for d in approved_docs)
         has_uat_scope = any(d["agent_scope"] in {"UAT", "All"} for d in approved_docs)
         
-        status_items = [
-            ("Kesiapan Knowledge IT", "Lengkap (Approved)" if has_it_scope else "Butuh Source IT", "#20A77B" if has_it_scope else "#F5A623"),
-            ("Kesiapan Knowledge UAT", "Lengkap (Approved)" if has_uat_scope else "Butuh Source UAT", "#20A77B" if has_uat_scope else "#F5A623"),
-            ("Dokumen Pending Review", f"{len(pending_docs)} Dokumen", "#F5A623" if pending_docs else "#20A77B"),
-            ("Status Defect UAT", f"{defects_count} Open Defect", "#E55353" if defects_count > 0 else "#20A77B")
-        ]
+        if defects_count > 0:
+            realtime_status_desc = f"🧪 Berdasarkan dokumen UAT terkini, project saat ini sedang dalam <b>Tahap Pengujian di Environment Regresi</b> oleh tim UAT dengan dukungan tim IT. Terdeteksi <b>{defects_count} open defect</b> yang sedang ditindaklanjuti."
+        elif has_uat_scope:
+            realtime_status_desc = "🧪 Berdasarkan dokumen UAT & evidence terkini, project saat ini sedang dalam <b>Tahap Pengujian di Environment Regresi oleh Tim UAT</b>, di-support penuh oleh Tim IT untuk memastikan kestabilan sistem."
+        else:
+            realtime_status_desc = "⚙️ Berdasarkan dokumen knowledge base, project saat ini berada dalam <b>Tahap Finalisasi Spesifikasi Teknis oleh Tim IT</b> sebelum pengujian UAT dimulai."
 
-        html_stat = '<div class="pm-shell" style="padding:14px 18px; min-height:260px;">'
-        for title, val, color in status_items:
-            html_stat += (
-                f'<div style="padding:10px 0; border-bottom:1px solid var(--line);">'
-                f'<div style="font-size:0.76rem; color:var(--muted); font-weight:600;">{title}</div>'
-                f'<div style="font-size:0.9rem; font-weight:800; color:{color}; margin-top:2px;">{val}</div>'
-                f'</div>'
-            )
-        html_stat += (
-            f'<div style="margin-top:12px; font-size:0.76rem; color:var(--muted); line-height:1.4;">'
-            f'🤖 <i>Synthesized via Agentic AI Coordinator & GAIA Gateway Governance.</i>'
-            f'</div></div>'
+        html_stat = (
+            f'<div class="pm-shell" style="padding:16px 18px; min-height:260px; display:flex; flex-direction:column; justify-content:space-between;">'
+            f'<div>'
+            f'<div style="font-size:0.75rem; font-weight:800; color:var(--brand); text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px;">'
+            f'📍 Dynamic Operational Status'
+            f'</div>'
+            f'<div style="font-size:0.88rem; color:var(--ink); line-height:1.55; background:var(--card-alt); padding:12px 14px; border-radius:10px; border-left:4px solid #20A77B; margin-bottom:12px;">'
+            f'{realtime_status_desc}'
+            f'</div>'
+            f'<div style="font-size:0.72rem; color:var(--muted); font-weight:700; margin-bottom:6px;">ALUR KOORDINASI TIM:</div>'
+            f'<div style="font-size:0.75rem; color:var(--ink); line-height:1.6;">'
+            f'✅ <b>BA</b> Scope Freeze ➔ ⚡ <b>IT</b> Dev & API Spec ➔ 🧪 <b>UAT</b> Regresi Testing (Active) ➔ 🚀 Release Gate'
+            f'</div>'
+            f'</div>'
+            f'<div style="margin-top:12px; font-size:0.74rem; color:var(--muted); border-top:1px solid var(--line); padding-top:8px;">'
+            f'🤖 <i>Disintesis otomatis dari Knowledge Base & AI Coordinator.</i>'
+            f'</div>'
+            f'</div>'
         )
         st.markdown(html_stat, unsafe_allow_html=True)
 
