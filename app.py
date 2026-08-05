@@ -203,6 +203,11 @@ def ensure_storage() -> None:
             if col not in doc_cols:
                 conn.execute(stmt)
 
+        # Migrations for chats
+        chat_cols = {row[1] for row in conn.execute("pragma table_info(chats)")}
+        if "dispatched" not in chat_cols:
+            conn.execute("alter table chats add column dispatched text")
+
         conn.execute(
             """
             update documents
@@ -367,6 +372,7 @@ def seed_sample_project() -> str:
             ),
         ],
         "High",
+        ["UAT", "IT"],
     )
     return project_id
 
@@ -582,10 +588,12 @@ def confidence_for(sources: list[Source]) -> str:
     return "Low"
 
 
-def answer_question(project_id: str, agent: str, question: str) -> tuple[str, list[Source], str]:
+def answer_question(project_id: str, agent: str, question: str) -> tuple[str, list[Source], str, list[str]]:
     sources = keyword_search(project_id, question, agent)
     confidence = confidence_for(sources)
+    dispatched: list[str] = []
     if agent == "Coordinator":
+        dispatched = delegate_agents(question)
         answer = coordinator_answer(project_id, question, sources)
     elif sources:
         agent_name = AGENTS[agent]["name"]
@@ -601,10 +609,10 @@ def answer_question(project_id: str, agent: str, question: str) -> tuple[str, li
         )
     if confidence == "Low":
         answer += "\n\n⚠️ Perlu validasi oleh PIC terkait"
-    return answer, sources, confidence
+    return answer, sources, confidence, dispatched
 
 
-def coordinator_verbose_answer(project_id: str, question: str, sources: list[Source], agents: list[str]) -> str:
+def coordinator_verbose_answer(project_id: str, question: str, sources: list[Source]) -> str:
     members = project_members(project_id)
     docs = project_docs(project_id, approved_only=True)
     pending_docs = [doc for doc in project_docs(project_id) if doc["approval_status"] == "Pending"]
@@ -614,24 +622,12 @@ def coordinator_verbose_answer(project_id: str, question: str, sources: list[Sou
     if not doc_signal:
         doc_signal = "  - Belum ada sumber yang match langsung dengan pertanyaan ini."
 
-    agent_sections = []
-    for key in agents:
-        agent_name = AGENTS[key]["name"]
-        scope_sources = keyword_search(project_id, question, key, limit=2)
-        insight = scope_sources[0].snippet[:150] if scope_sources else "Tidak ada konteks yang relevan saat ini."
-        agent_sections.append(f"**{AGENTS[key]['icon']} {agent_name}** dihubungi:\n> {insight}")
-    dispatched = "\n\n".join(agent_sections)
-
     blockers = blocker_signals(project_id)
     blocker_text = "\n".join(f"  - [{s['severity']}] {s['title']}" for s in blockers[:3]) if blockers else "  - Tidak ada blocker aktif."
 
     return textwrap.dedent(
         f"""
         🧠 **AI Coordinator** sedang memproses pertanyaan Anda...
-
-        ---
-
-        {dispatched}
 
         ---
 
@@ -659,17 +655,18 @@ def coordinator_verbose_answer(project_id: str, question: str, sources: list[Sou
 
 def coordinator_answer(project_id: str, question: str, sources: list[Source]) -> str:
     agents = delegate_agents(question)
-    return coordinator_verbose_answer(project_id, question, sources, agents)
+    return coordinator_verbose_answer(project_id, question, sources)
 
 
-def store_chat(project_id: str, agent: str, role: str, content: str, sources: list[Source] | None = None, confidence: str | None = None) -> None:
+def store_chat(project_id: str, agent: str, role: str, content: str, sources: list[Source] | None = None, confidence: str | None = None, dispatched: list[str] | None = None) -> None:
     source_payload = json.dumps([source.__dict__ for source in sources or []])
+    dispatch_payload = json.dumps(dispatched or [])
     db_execute(
         """
-        insert into chats (project_id, agent, role, content, sources, confidence, created_at)
-        values (?, ?, ?, ?, ?, ?, ?)
+        insert into chats (project_id, agent, role, content, sources, confidence, dispatched, created_at)
+        values (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (project_id, agent, role, content, source_payload, confidence, now_iso()),
+        (project_id, agent, role, content, source_payload, confidence, dispatch_payload, now_iso()),
     )
 
 
@@ -1867,6 +1864,43 @@ def inject_css() -> None:
             font-size: .83rem;
             color: var(--muted);
             margin-top: 2px;
+        }}
+        /* ─── Chat message meta (dispatch + confidence chips) ─── */
+        .pm-msg-meta {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px dashed var(--line);
+        }}
+        .pm-dispatch-group {{
+            display: inline-flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }}
+        .pm-dispatch-chip {{
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: .7rem;
+            font-weight: 800;
+            padding: 2px 9px;
+            border-radius: 999px;
+            white-space: nowrap;
+        }}
+        .pm-dispatch-chip.it {{ background: rgba(0,120,212,.12); color: #0078d4; }}
+        .pm-dispatch-chip.uat {{ background: rgba(32,167,123,.12); color: #20A77B; }}
+        .pm-dispatch-chip.coordinator {{ background: rgba(0,63,136,.12); color: var(--brand); }}
+        .pm-conf-chip {{
+            display: inline-flex;
+            align-items: center;
+            font-size: .7rem;
+            font-weight: 800;
+            padding: 2px 9px;
+            border-radius: 999px;
+            border: 1px solid;
         }}
         /* ─── Chat Messages — scrollable area ─── */
         div[data-testid="stChatMessage"] {{
@@ -3152,13 +3186,63 @@ def render_chat(project: sqlite3.Row) -> None:
             unsafe_allow_html=True,
         )
 
-        for message in chat_history(project["id"], "Coordinator"):
+        messages = chat_history(project["id"], "Coordinator")
+        for message in messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
+                meta_row = []
+                # Dispatch chips — which specialist agent(s) the coordinator delegated to
+                if message["role"] == "assistant":
+                    dispatched = []
+                    raw = row_get(message, "dispatched")
+                    if raw:
+                        try:
+                            dispatched = json.loads(raw)
+                        except Exception:
+                            dispatched = []
+                    if dispatched:
+                        chips = []
+                        for key in dispatched:
+                            if key in AGENTS:
+                                a = AGENTS[key]
+                                chips.append(f'<span class="pm-dispatch-chip {key.lower()}">{a["icon"]} {a["name"]}</span>')
+                        if chips:
+                            meta_row.append(f'<span class="pm-dispatch-group">{"".join(chips)}</span>')
                 if message["confidence"]:
                     conf = message["confidence"]
                     conf_color = {"High": "#20A77B", "Medium": "#F5A623", "Low": "#E55353"}.get(conf, "#6b7280")
-                    st.markdown(f'<small style="color:{conf_color}; font-weight: 700;">Confidence: {conf}</small>', unsafe_allow_html=True)
+                    meta_row.append(f'<span class="pm-conf-chip" style="color:{conf_color}; border-color:{conf_color}40;">Confidence: {conf}</span>')
+                if meta_row:
+                    st.markdown(f'<div class="pm-msg-meta">{"".join(meta_row)}</div>', unsafe_allow_html=True)
+
+        # Empty-state suggestions — quick question chips
+        if not messages:
+            st.markdown(
+                """
+                <div class="pm-empty">
+                    <div class="pm-empty-icon">💬</div>
+                    <div class="pm-empty-title">Mulai koordinasi dengan AI Coordinator</div>
+                    <div class="pm-empty-body">Tanya status project, blocker, atau rekomendasi. AI Coordinator akan men-delegate ke Agent IT & Agent UAT sesuai konteks pertanyaan.</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.markdown('<div class="pm-section-title" style="margin-top: 16px;">💡 Coba tanyakan:</div>', unsafe_allow_html=True)
+            suggestions = [
+                "Berapa open defect yang masih ditindaklanjuti?",
+                "Apakah runbook deployment sudah siap untuk release?",
+                "Apa blocker utama project saat ini?",
+                "Ringkas kondisi project untuk meeting koordinasi.",
+            ]
+            col_s1, col_s2 = st.columns(2, gap="small")
+            for i, s in enumerate(suggestions):
+                target = col_s1 if i % 2 == 0 else col_s2
+                with target:
+                    if st.button(f"💬 {s}", key=f"sugg_{i}", use_container_width=True):
+                        store_chat(project["id"], "Coordinator", "user", s)
+                        answer, sources, confidence, dispatched = answer_question(project["id"], "Coordinator", s)
+                        store_chat(project["id"], "Coordinator", "assistant", answer, sources, confidence, dispatched)
+                        st.rerun()
 
     with right:
         st.markdown('<div class="pm-section-title">Source Reference</div>', unsafe_allow_html=True)
@@ -3218,8 +3302,8 @@ def render_chat(project: sqlite3.Row) -> None:
     prompt = st.chat_input("Tanya AI Coordinator — koordinasi project, status, blocker, rekomendasi...")
     if prompt:
         store_chat(project["id"], "Coordinator", "user", prompt)
-        answer, sources, confidence = answer_question(project["id"], "Coordinator", prompt)
-        store_chat(project["id"], "Coordinator", "assistant", answer, sources, confidence)
+        answer, sources, confidence, dispatched = answer_question(project["id"], "Coordinator", prompt)
+        store_chat(project["id"], "Coordinator", "assistant", answer, sources, confidence, dispatched)
         st.rerun()
 
 
