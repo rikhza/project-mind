@@ -1736,6 +1736,18 @@ def inject_css() -> None:
             white-space: nowrap;
             flex-shrink: 0;
         }}
+        .pm-role-badge.it {{ background: rgba(0,120,212,.16); color: #0078d4; }}
+        .pm-role-badge.uat {{ background: rgba(32,167,123,.16); color: #20A77B; }}
+        .pm-role-badge.ba {{ background: rgba(245,166,35,.16); color: #b87800; }}
+        .pm-role-badge.po {{ background: rgba(139,92,246,.16); color: #8b5cf6; }}
+        .pm-avatar-it {{ background: linear-gradient(135deg, #0078d4, #2b8fdd); }}
+        .pm-avatar-uat {{ background: linear-gradient(135deg, #20A77B, #35c08f); }}
+        .pm-avatar-ba {{ background: linear-gradient(135deg, #F5A623, #f7b731); }}
+        .pm-avatar-po {{ background: linear-gradient(135deg, #8b5cf6, #a78bfa); }}
+        .pm-dot-it {{ background: #0078d4 !important; }}
+        .pm-dot-uat {{ background: #20A77B !important; }}
+        .pm-dot-ba {{ background: #F5A623 !important; }}
+        .pm-dot-po {{ background: #8b5cf6 !important; }}
         .pm-member-role-dist {{
             display: flex;
             flex-wrap: wrap;
@@ -2751,7 +2763,6 @@ def render_members(project_id: str) -> None:
     members = project_members(project_id)
     creator = project_creator(project_id)
     is_creator = can_approve_sources(project_id)
-    role_colors = {"IT": "#0078d4", "UAT": "#20A77B", "BA": "#F5A623", "PO": "#8b5cf6"}
 
     def initials(name: str) -> str:
         parts = [p for p in re.split(r"[\s._-]+", name.strip()) if p]
@@ -2767,19 +2778,15 @@ def render_members(project_id: str) -> None:
     dist_chips = []
     for role in ROLES:
         cnt = role_dist.get(role, 0)
-        rc = role_colors.get(role, "#6b7280")
+        role_key = role.lower()
         dist_chips.append(
-            f'<span class="pm-dist-chip"><span class="dot" style="background:{rc};"></span>{role} <span class="cnt">({cnt})</span></span>'
+            f'<span class="pm-dist-chip"><span class="dot pm-dot-{role_key}"></span>{role} <span class="cnt">({cnt})</span></span>'
         )
     if not members:
-        dist_chips = ['<span class="pm-dist-chip" style="color: var(--muted);">Belum ada member</span>']
+        dist_chips = ['<span class="pm-dist-chip"><span class="dot"></span>Belum ada member</span>']
 
     st.markdown(
-        f"""
-        <div class="pm-member-role-dist">
-            {''.join(dist_chips)}
-        </div>
-        """,
+        f'<div class="pm-member-role-dist">{"".join(dist_chips)}</div>',
         unsafe_allow_html=True,
     )
 
@@ -2788,12 +2795,7 @@ def render_members(project_id: str) -> None:
     # ── Left: team member cards ─────────────────────────────────────────────────
     with left:
         st.markdown(
-            """
-            <div class="pm-section-header">
-                <div class="pm-section-icon">👥</div>
-                <div class="pm-section-heading">Team Members</div>
-            </div>
-            """,
+            '<div class="pm-section-header"><div class="pm-section-icon">👥</div><div class="pm-section-heading">Team Members</div></div>',
             unsafe_allow_html=True,
         )
 
@@ -2801,54 +2803,25 @@ def render_members(project_id: str) -> None:
             for m in members:
                 nip = m["nip"] or "-"
                 nama = m["nama"] or m["username"]
-                unit = m["unit"] or "—"
+                unit = m["unit"] or "&mdash;"
                 role = m["role"]
-                rc = role_colors.get(role, "#6b7280")
+                role_key = role.lower()
                 av = initials(nama)
-                creator_badge = f'<span class="pm-member-creator-badge">👑 Creator</span>' if m["username"] == creator else ""
+                creator_badge = '<span class="pm-member-creator-badge">👑 Creator</span>' if m["username"] == creator else ""
                 st.markdown(
-                    f"""
-                    <div class="pm-member-card">
-                        <div class="pm-avatar" style="background: linear-gradient(135deg, {rc}, {rc}cc);">{esc(av)}</div>
-                        <div class="pm-member-main">
-                            <div class="pm-member-name-line">
-                                <span class="name">{esc(nama)}</span>
-                                {creator_badge}
-                            </div>
-                            <div class="pm-member-sub">
-                                <span class="pm-member-nip-code">{esc(nip)}</span>
-                                <span class="pm-member-unit">🏢 {esc(unit)}</span>
-                                <span class="pm-member-unit">👤 {esc(m["username"])}</span>
-                            </div>
-                        </div>
-                        <span class="pm-role-badge" style="background:{rc}18; color:{rc};">{esc(role)}</span>
-                    </div>
-                    """,
+                    f'<div class="pm-member-card"><div class="pm-avatar pm-avatar-{role_key}">{esc(av)}</div><div class="pm-member-main"><div class="pm-member-name-line"><span class="name">{esc(nama)}</span>{creator_badge}</div><div class="pm-member-sub"><span class="pm-member-nip-code">{esc(nip)}</span><span class="pm-member-unit">🏢 {esc(unit)}</span><span class="pm-member-unit">👤 {esc(m["username"])}</span></div></div><span class="pm-role-badge {role_key}">{esc(role)}</span></div>',
                     unsafe_allow_html=True,
                 )
         else:
             st.markdown(
-                """
-                <div class="pm-context-card">
-                    <div class="pm-context-label">Belum ada member</div>
-                    <div style="color: var(--muted); font-size: .84rem; line-height: 1.6;">
-                        Tambahkan member pertama untuk mulai berkolaborasi lintas biro.
-                        Member dapat berinteraksi dengan AI Coordinator sesuai domainnya.
-                    </div>
-                </div>
-                """,
+                '<div class="pm-context-card"><div class="pm-context-label">Belum ada member</div><div style="color: var(--muted); font-size: .84rem; line-height: 1.6;">Tambahkan member pertama untuk mulai berkolaborasi lintas biro. Member dapat berinteraksi dengan AI Coordinator sesuai domainnya.</div></div>',
                 unsafe_allow_html=True,
             )
 
     # ── Right: add member ───────────────────────────────────────────────────────
     with right:
         st.markdown(
-            """
-            <div class="pm-section-header">
-                <div class="pm-section-icon">➕</div>
-                <div class="pm-section-heading">Tambah Member</div>
-            </div>
-            """,
+            '<div class="pm-section-header"><div class="pm-section-icon">➕</div><div class="pm-section-heading">Tambah Member</div></div>',
             unsafe_allow_html=True,
         )
         st.markdown(
@@ -2874,14 +2847,7 @@ def render_members(project_id: str) -> None:
                     st.rerun()
         else:
             st.markdown(
-                """
-                <div class="pm-context-card">
-                    <div class="pm-context-label">🔒 Akses terbatas</div>
-                    <div style="color: var(--muted); font-size: .84rem; line-height: 1.6;">
-                        Hanya creator workspace yang bisa menambah member. Silakan hubungi creator untuk mengundang anggota tim baru.
-                    </div>
-                </div>
-                """,
+                '<div class="pm-context-card"><div class="pm-context-label">🔒 Akses terbatas</div><div style="color: var(--muted); font-size: .84rem; line-height: 1.6;">Hanya creator workspace yang bisa menambah member. Silakan hubungi creator untuk mengundang anggota tim baru.</div></div>',
                 unsafe_allow_html=True,
             )
 
@@ -3164,37 +3130,8 @@ def render_knowledge(project_id: str) -> None:
                 st.success(f"🗑️ **{sel_doc['filename']}** dihapus.")
                 st.rerun()
 
-        # Approved knowledge (what agents actually use)
-        st.markdown('<div class="pm-section-title" style="margin-top: 4px;">✅ Knowledge Base Aktif</div>', unsafe_allow_html=True)
-        if approved_docs:
-            for doc in approved_docs[:6]:
-                ai_sum = row_get(doc, "ai_summary") or ""
-                doc_type = row_get(doc, "doc_type") or "file"
-                type_icon = {"file": "📄", "note": "📝", "link": "🔗"}.get(doc_type, "📄")
-                type_lbl = {"file": "Dokumen", "note": "Catatan", "link": "Link"}.get(doc_type, doc_type.capitalize())
-                st.markdown(
-                    f"""
-                    <div class="pm-source">
-                        <div class="pm-source-title">{type_icon} {esc(doc["filename"])}</div>
-                        <div class="pm-source-body">
-                            <span class="pm-pill {doc["source_label"].lower()}">{esc(doc["source_label"])}</span>
-                            {esc(ai_sum[:150]) if ai_sum else esc(doc["text"][:150])}
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-        else:
-            st.markdown(
-                """
-                <div class="pm-empty">
-                    <div class="pm-empty-icon">⏳</div>
-                    <div class="pm-empty-title">Belum ada knowledge aktif</div>
-                    <div class="pm-empty-body">Approve dokumen pending atau upload yang baru agar agent bisa memakainya sebagai konteks.</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+        # Approved knowledge is already shown in the left library (filter Approved).
+        # Right panel ends here to keep it focused on intake/approval/edit.
 
 
 
